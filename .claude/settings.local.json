@@ -9,7 +9,8 @@
       "Bash(echo:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(DEBUG=1 node:*)"
+      "Bash(DEBUG=1 node:*)",
+      "Bash(tail:*)"
     ]
   }
 }

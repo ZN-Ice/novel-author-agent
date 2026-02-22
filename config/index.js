@@ -18,8 +18,8 @@ export const config = {
   // GLM API 配置
   glm: {
     apiKey: process.env.GLM_API_KEY || '',
-    baseUrl: process.env.GLM_BASE_URL || 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4-plus', // 使用 GLM-4-Plus 模型（GLM-5的调用名称）
+    baseUrl: process.env.GLM_BASE_URL || 'https://open.bigmodel.cn/api/coding/paas/v4',
+    model: 'glm-4.7', // 使用 GLM-4.7 模型
     temperature: 0.7,
     maxTokens: 4096,
   },

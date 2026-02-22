@@ -22,7 +22,7 @@ class GLMClient {
     // 创建 axios 实例
     this.client = axios.create({
       baseURL: this.baseUrl,
-      timeout: 60000,
+      timeout: 180000, // 增加到3分钟
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${this.apiKey}`,
