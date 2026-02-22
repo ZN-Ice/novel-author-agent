@@ -12,6 +12,9 @@ logs/
 # Workspaces
 workspaces/
 
+# Classic novels download directory
+classic_novels/
+
 # IDE
 .idea/
 .vscode/

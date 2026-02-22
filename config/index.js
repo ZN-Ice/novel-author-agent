@@ -45,6 +45,11 @@ export const config = {
     dir: process.env.WORKSPACE_DIR || path.join(__dirname, '../workspaces'),
   },
 
+  // 经典小说存储目录
+  classicNovels: {
+    dir: process.env.CLASSIC_NOVELS_DIR || path.join(__dirname, '../classic_novels'),
+  },
+
   // 章节识别模式
   chapterPatterns: [
     /^第[零一二三四五六七八九十百千万0-9]+[章节回]\s*[：:]*\s*.+$/,  // 第一章 标题

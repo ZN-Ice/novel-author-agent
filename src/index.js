@@ -52,6 +52,15 @@ program
     process.exit(0);
   });
 
+// classics 命令 - 列出已下载的经典小说
+program
+  .command('classics')
+  .description('列出已下载的经典小说')
+  .action(async () => {
+    await commands.listClassics();
+    process.exit(0);
+  });
+
 // list 命令
 program
   .command('list')

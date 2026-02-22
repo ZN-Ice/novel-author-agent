@@ -27,7 +27,15 @@ import {
 import { getAuthorAgent } from '../agents/author-agent.js';
 import { getEditorAgent } from '../agents/editor-agent.js';
 import { closeBrowser } from '../scraper/browser.js';
-import { writeText, writeJson, readText, ensureDir } from '../utils/file-utils.js';
+import { writeText, writeJson, readText, ensureDir, readJson } from '../utils/file-utils.js';
+import {
+  getNovelPath,
+  novelExists,
+  checkNovelIntegrity,
+  saveNovelMeta,
+  listClassicNovels,
+  getClassicNovelsDir,
+} from '../scraper/classic-novels.js';
 import path from 'path';
 import config from '../../config/index.js';
 import { validateConfig } from '../../config/index.js';
@@ -99,33 +107,98 @@ export async function downloadBook(bookId) {
     console.log(chalk.white(`  字数: ${bookInfo.wordCount}`));
     console.log();
 
-    // 创建工作目录
-    output.info('创建工作目录...');
-    const workspace = await createWorkspace(bookInfo);
+    // 检查是否已存在于 classic_novels 目录
+    const exists = await novelExists(bookInfo);
+    if (exists) {
+      output.info('检测到已存在的文件，检查完整性...');
 
-    // 下载文件
+      // 验证配置（用于LLM检查）
+      const validation = validateConfig();
+      const useLLM = validation.valid;
+
+      const checkResult = await checkNovelIntegrity(bookInfo, useLLM);
+
+      if (checkResult.valid) {
+        output.success('文件已存在且完整，跳过下载');
+        console.log();
+        console.log(chalk.cyan('文件信息:'));
+        console.log(chalk.white(`  路径: ${getNovelPath(bookInfo)}`));
+        console.log(chalk.white(`  大小: ${checkResult.scriptCheck?.stats?.fileSizeFormatted || '未知'}`));
+        console.log(chalk.white(`  章节数: ${checkResult.scriptCheck?.stats?.chapterCount || '未知'}`));
+        console.log(chalk.white(`  总字数: ${checkResult.scriptCheck?.stats?.totalWords || '未知'}`));
+
+        if (checkResult.llmCheck) {
+          console.log(chalk.white(`  LLM置信度: ${(checkResult.llmCheck.confidence * 100).toFixed(0)}%`));
+        }
+
+        return {
+          skipped: true,
+          bookInfo,
+          checkResult,
+          path: getNovelPath(bookInfo),
+        };
+      } else {
+        output.warn('文件存在但不完整，将重新下载');
+        if (checkResult.scriptCheck?.issues?.length > 0) {
+          console.log(chalk.yellow('  问题:'));
+          checkResult.scriptCheck.issues.forEach(issue => {
+            console.log(chalk.yellow(`    - ${issue}`));
+          });
+        }
+        if (checkResult.llmCheck?.issues?.length > 0) {
+          checkResult.llmCheck.issues.forEach(issue => {
+            console.log(chalk.yellow(`    - ${issue}`));
+          });
+        }
+        console.log();
+      }
+    }
+
+    // 确保 classic_novels 目录存在
+    await ensureDir(getClassicNovelsDir());
+
+    // 下载文件到 classic_novels 目录
     output.info('下载小说文件...');
-    const savePath = getFilePath(workspace.bookId, 'source', 'original.txt');
+    const savePath = getNovelPath(bookInfo);
     const result = await downloadNovel(bookInfo.downloadUrl, savePath);
 
     if (result.success) {
       output.success(`下载完成: ${result.sizeFormatted}`);
 
-      // 更新元信息
-      await updateMeta(workspace.bookId, {
-        status: PHASES.DOWNLOADED,
-        fileSize: result.size,
-      });
+      // 检查完整性
+      output.info('检查下载文件完整性...');
+      const validation = validateConfig();
+      const useLLM = validation.valid;
+      const checkResult = await checkNovelIntegrity(bookInfo, useLLM);
 
-      // 记录进展
-      await addProgress(workspace.bookId, {
-        phase: PHASES.DOWNLOADED,
-        action: ACTIONS.DOWNLOAD,
-        status: 'completed',
-        details: { fileSize: result.size, path: savePath },
-      });
+      // 保存元信息
+      await saveNovelMeta(bookInfo, checkResult);
 
-      return { ...workspace, downloadResult: result };
+      if (checkResult.valid) {
+        output.success('完整性检查通过');
+      } else {
+        output.warn('完整性检查发现问题:');
+        if (checkResult.scriptCheck?.issues?.length > 0) {
+          checkResult.scriptCheck.issues.forEach(issue => {
+            console.log(chalk.yellow(`  - ${issue}`));
+          });
+        }
+      }
+
+      console.log();
+      console.log(chalk.cyan('文件信息:'));
+      console.log(chalk.white(`  路径: ${savePath}`));
+      console.log(chalk.white(`  大小: ${checkResult.scriptCheck?.stats?.fileSizeFormatted || result.sizeFormatted}`));
+      console.log(chalk.white(`  章节数: ${checkResult.scriptCheck?.stats?.chapterCount || '未知'}`));
+      console.log(chalk.white(`  总字数: ${checkResult.scriptCheck?.stats?.totalWords || '未知'}`));
+
+      return {
+        skipped: false,
+        bookInfo,
+        downloadResult: result,
+        checkResult,
+        path: savePath,
+      };
     } else {
       output.error(`下载失败: ${result.error}`);
       return null;
@@ -699,9 +772,10 @@ ${chalk.yellow('用法:')}
 
 ${chalk.yellow('命令:')}
   crawl [page]               爬取排行榜（默认第1页）
-  download <book-id>         下载指定书籍
+  download <book-id>         下载指定书籍到 classic_novels 目录
   download-top <n>           下载排行榜前N本书
-  list                       列出所有书籍
+  classics                   列出已下载的经典小说
+  list                       列出所有工作目录中的书籍
   info <book-id>             查看书籍详情
   progress <book-id>         查看进展
   analyze <book-id>          分析小说
@@ -720,16 +794,50 @@ ${chalk.yellow('选项:')}
 ${chalk.yellow('示例:')}
   node src/index.js crawl 1
   node src/index.js download 6174
+  node src/index.js classics
   node src/index.js analyze uuid-xxx
   node src/index.js outline create uuid-xxx --genre 玄幻
   node src/index.js chapter write uuid-xxx 1
 `);
 }
 
+/**
+ * 列出已下载的经典小说
+ */
+export async function listClassics() {
+  output.title('已下载的经典小说');
+
+  const novels = await listClassicNovels();
+
+  if (novels.length === 0) {
+    output.info('暂无已下载的经典小说');
+    output.info(`下载目录: ${getClassicNovelsDir()}`);
+    return [];
+  }
+
+  novels.forEach((novel, index) => {
+    const integrityIcon = novel.integrity?.valid ? chalk.green('✔') : chalk.yellow('⚠');
+    console.log(
+      chalk.dim(`${index + 1}.`),
+      integrityIcon,
+      chalk.white(novel.title),
+      chalk.gray(`(${novel.author})`),
+      chalk.dim(`[${novel.integrity?.scriptCheck?.chapterCount || '?'}章]`)
+    );
+  });
+
+  console.log();
+  output.info(`共 ${novels.length} 本经典小说`);
+  output.info(`存储目录: ${getClassicNovelsDir()}`);
+
+  return novels;
+}
+
 export default {
   crawlRank,
   downloadBook,
   downloadTopBooks,
+  listClassics,
   listBooks,
   showBookInfo,
   showProgress,
