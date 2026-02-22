@@ -134,6 +134,19 @@ outlineCmd
   });
 
 outlineCmd
+  .command('smart <description>')
+  .description('智能大纲创作（输入描述，自动匹配参考小说）')
+  .option('--title <title>', '小说名称')
+  .option('--no-auto-download', '不自动下载参考小说')
+  .action(async (description, options) => {
+    await commands.smartOutlineCreate(description, {
+      title: options.title,
+      autoDownload: options.autoDownload !== false,
+    });
+    process.exit(0);
+  });
+
+outlineCmd
   .command('review <bookId>')
   .description('评价大纲')
   .action(async (bookId) => {

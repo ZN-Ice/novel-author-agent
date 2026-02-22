@@ -82,6 +82,26 @@ const SYSTEM_PROMPTS = {
 4. 保持原文的整体风格和情节
 
 输出优化后的完整章节内容。`,
+
+  SMART_OUTLINE_CREATION: `你是一位才华横溢的小说作家和编辑。你的任务是根据用户的描述创作小说大纲。
+
+你需要：
+1. 理解用户想要创作的小说类型和风格
+2. 参考已有的经典小说大纲结构
+3. 融合参考小说的优点，创作出原创大纲
+4. 确保大纲完整、逻辑自洽、有吸引力
+
+大纲应包含以下要素：
+1. **基本信息**：书名、类型、预计字数
+2. **一句话简介**：用一句话概括故事
+3. **世界观设定**：故事发生的背景和设定
+4. **主要人物**：
+   - 主角：姓名、性格、背景、目标
+   - 重要配角：与主角的关系、在故事中的作用
+5. **主线大纲**：分阶段（开篇、发展、高潮、结局）的情节规划
+6. **关键节点**：重要的转折点和冲突点
+7. **伏笔设计**：需要埋设的伏笔
+8. **主题思想**：故事想要表达的核心主题`,
 };
 
 /**
@@ -203,6 +223,53 @@ ${reference ? `- 参考风格: ${reference}` : ''}
 
     if (result.success) {
       logger.info(`[${this.name}] 大纲创作完成`);
+    }
+
+    return result;
+  }
+
+  /**
+   * 智能大纲创作 - 根据描述自动选择参考小说并创作大纲
+   * @param {string} description - 用户描述（如"我想写一本玄幻小说"）
+   * @param {Object} options - 额外选项
+   * @returns {Promise<Object>}
+   */
+  async createOutlineByDescription(description, options = {}) {
+    logger.info(`[${this.name}] 开始智能大纲创作: ${description}`);
+
+    const { matchResult, referenceOutlines = [] } = options;
+
+    // 构建参考信息
+    let referenceSection = '';
+    if (referenceOutlines.length > 0) {
+      referenceSection = '\n\n**参考小说大纲分析**:\n';
+      referenceOutlines.forEach((ref, index) => {
+        referenceSection += `\n### 参考${index + 1}: 《${ref.title}》
+${ref.analysis ? truncate(ref.analysis, 2000) : '（无分析数据）'}
+`;
+      });
+    }
+
+    const userMessage = `用户想要创作小说，描述如下：
+"${description}"
+
+${matchResult?.analyzedGenre ? `**分析出的类型**: ${matchResult.analyzedGenre}` : ''}
+${matchResult?.analyzedThemes?.length ? `**分析出的主题**: ${matchResult.analyzedThemes.join('、')}` : ''}
+${referenceSection}
+
+请根据用户的描述，${referenceOutlines.length > 0 ? '参考已有经典小说的大纲结构，' : ''}创作一个原创的小说大纲。
+
+要求：
+1. 大纲要原创，不能抄袭参考小说
+2. 要借鉴参考小说的优秀结构和叙事技巧
+3. 大纲要完整、有吸引力、逻辑自洽`;
+
+    const result = await this.call(userMessage, {
+      systemPrompt: SYSTEM_PROMPTS.SMART_OUTLINE_CREATION,
+    });
+
+    if (result.success) {
+      logger.info(`[${this.name}] 智能大纲创作完成`);
     }
 
     return result;

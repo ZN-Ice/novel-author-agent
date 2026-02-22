@@ -64,14 +64,19 @@ node src/index.js analyze <book-id>
 ### 大纲创作流程
 
 ```bash
-# 1. 创作大纲
+# 智能大纲创作（推荐）- 输入描述，自动匹配参考小说
+node src/index.js outline smart "我想写一本玄幻小说"
+node src/index.js outline smart "无限流，主角进入各种副本" --title 我的小说
+node src/index.js outline smart "都市异能，主角觉醒超能力"
+
+# 传统大纲创作 - 需要先有工作空间
 node src/index.js outline create <book-id> --genre 玄幻 --theme "主题描述"
 
-# 2. 评价大纲（编辑给出评分和改进建议）
+# 评价大纲（编辑给出评分和改进建议）
 node src/index.js outline review <book-id>
 
-# 3. 确认执行（如果之前有确认弹窗）
-node src/index.js outline confirm <book-id>
+# 优化大纲
+node src/index.js outline optimize <book-id>
 ```
 
 ### 章节创作流程

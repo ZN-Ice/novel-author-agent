@@ -37,6 +37,11 @@ import {
   listClassicNovels,
   getClassicNovelsDir,
 } from '../scraper/classic-novels.js';
+import {
+  matchReferenceNovels,
+  extractSearchKeywords,
+  buildCategoryIndex,
+} from '../workspace/novel-index.js';
 import path from 'path';
 import config from '../../config/index.js';
 import { validateConfig } from '../../config/index.js';
@@ -500,6 +505,172 @@ export async function createOutline(bookId, options = {}) {
 }
 
 /**
+ * 智能大纲创作 - 根据描述自动选择参考小说
+ * @param {string} description - 用户描述
+ * @param {Object} options - 选项
+ */
+export async function smartOutlineCreate(description, options = {}) {
+  output.title('智能大纲创作');
+  console.log(chalk.white(`描述: "${description}"`));
+  console.log();
+
+  const validation = validateConfig();
+  if (!validation.valid) {
+    output.error('配置错误:');
+    validation.errors.forEach((err) => output.error(`  - ${err}`));
+    return null;
+  }
+
+  try {
+    // 步骤1: 分析描述，匹配参考小说
+    output.info('分析描述，寻找参考小说...');
+    const matchResult = await matchReferenceNovels(description, 3);
+
+    if (matchResult.analyzedGenre) {
+      console.log(chalk.cyan(`  分析类型: ${matchResult.analyzedGenre}`));
+    }
+    if (matchResult.analyzedThemes?.length) {
+      console.log(chalk.cyan(`  分析主题: ${matchResult.analyzedThemes.join('、')}`));
+    }
+
+    // 检查是否有推荐
+    let referenceOutlines = [];
+
+    if (matchResult.recommendations?.length > 0) {
+      console.log();
+      output.success(`找到 ${matchResult.recommendations.length} 本参考小说:`);
+      matchResult.recommendations.forEach((rec, i) => {
+        console.log(chalk.white(`  ${i + 1}. 《${rec.title}》- ${rec.reason}`));
+      });
+
+      // 读取参考小说的分析结果
+      for (const rec of matchResult.recommendations) {
+        const novelPath = getNovelPath({ title: rec.title });
+        const metaPath = novelPath.replace('.txt', '.meta.json');
+        const meta = await readJson(metaPath);
+
+        if (meta) {
+          // 查找对应的工作空间
+          const workspaces = await listWorkspaces();
+          const workspace = workspaces.find(w => w.title === rec.title);
+
+          if (workspace) {
+            const analysisPath = await getFilePath(workspace.id, 'analysis', 'outline-analysis.txt');
+            const analysis = await readText(analysisPath);
+            referenceOutlines.push({
+              title: rec.title,
+              analysis: analysis || '',
+            });
+          }
+        }
+      }
+    } else if (matchResult.suggestedKeywords?.length > 0) {
+      console.log();
+      output.warn('小说库中没有找到直接匹配的小说');
+      output.info('建议搜索以下关键词下载参考小说:');
+      matchResult.suggestedKeywords.forEach((kw, i) => {
+        console.log(chalk.yellow(`  ${i + 1}. ${kw}`));
+      });
+
+      // 尝试自动下载
+      if (options.autoDownload !== false) {
+        console.log();
+        output.info('尝试自动下载参考小说...');
+
+        for (const keyword of matchResult.suggestedKeywords.slice(0, 2)) {
+          try {
+            const searchResult = await searchWithOptions(keyword);
+            if (searchResult.found && searchResult.results.length > 0) {
+              const book = searchResult.results[0];
+              output.info(`下载: ${book.title}`);
+              await downloadBook(book.id);
+            }
+          } catch (e) {
+            output.warn(`搜索 "${keyword}" 失败: ${e.message}`);
+          }
+        }
+
+        // 重新匹配
+        output.info('重新匹配参考小说...');
+        const newMatchResult = await matchReferenceNovels(description, 3);
+        if (newMatchResult.recommendations?.length > 0) {
+          matchResult.recommendations = newMatchResult.recommendations;
+          referenceOutlines = [];
+
+          for (const rec of matchResult.recommendations) {
+            const workspaces = await listWorkspaces();
+            const workspace = workspaces.find(w => w.title === rec.title);
+            if (workspace) {
+              const analysisPath = await getFilePath(workspace.id, 'analysis', 'outline-analysis.txt');
+              const analysis = await readText(analysisPath);
+              referenceOutlines.push({
+                title: rec.title,
+                analysis: analysis || '',
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // 步骤2: 创作大纲
+    console.log();
+    output.info('正在创作大纲...');
+
+    const authorAgent = getAuthorAgent();
+    const result = await authorAgent.createOutlineByDescription(description, {
+      matchResult,
+      referenceOutlines,
+    });
+
+    if (result.success) {
+      // 创建新的工作空间保存大纲
+      const workspace = await createWorkspace({
+        title: options.title || `新小说-${Date.now()}`,
+        category: matchResult.analyzedGenre || '未分类',
+      });
+
+      const outlinePath = await getFilePath(workspace.bookId, 'outline/draft', 'outline-v1.txt');
+      await writeText(outlinePath, result.content);
+
+      await updateMeta(workspace.bookId, {
+        status: PHASES.OUTLINING,
+        category: matchResult.analyzedGenre || '未分类',
+      });
+
+      await addProgress(workspace.bookId, {
+        phase: PHASES.OUTLINING,
+        action: '智能大纲创作',
+        status: 'completed',
+        details: {
+          description,
+          references: matchResult.recommendations?.map(r => r.title) || [],
+        },
+      });
+
+      output.success('大纲创作完成');
+      console.log();
+      console.log(chalk.cyan(`工作空间: #${workspace.seq} ${workspace.meta.title}`));
+      console.log();
+      console.log(chalk.white(result.content.substring(0, 800) + '...'));
+
+      return {
+        success: true,
+        workspace,
+        outline: result.content,
+        references: matchResult.recommendations || [],
+      };
+    } else {
+      output.error(`创作失败: ${result.error}`);
+      return { success: false, error: result.error };
+    }
+  } catch (error) {
+    output.error(`智能大纲创作失败: ${error.message}`);
+    throw error;
+  }
+}
+
+/**
  * 评价大纲
  */
 export async function reviewOutline(bookId) {
@@ -782,27 +953,36 @@ ${chalk.yellow('命令:')}
   info <book-id>             查看书籍详情
   progress <book-id>         查看进展
   analyze <book-id>          分析小说
-  outline create <book-id>   创作大纲
+  outline create <book-id>   创作大纲（指定书籍）
+  outline smart <desc>       智能大纲创作（输入描述，自动找参考）
   outline review <book-id>   评价大纲
   outline optimize <book-id> 优化大纲
   chapter write <book-id> <num>  创作章节
   chapter review <book-id> <num> 评价章节
   clean <book-id>            清理工作目录
 
+${chalk.yellow('说明:')}
+  <book-id> 可以是序号（如 1, 2, 3）或完整目录名
+  <desc> 是小说描述，如 "我想写一本玄幻小说"
+
 ${chalk.yellow('选项:')}
   --genre <type>             小说类型（大纲创作时使用）
   --theme <theme>            主题设定
-  --title <title>            章节标题
+  --title <title>            章节标题/小说名
+  --no-auto-download         智能大纲时不自动下载参考小说
 
 ${chalk.yellow('示例:')}
   node src/index.js crawl 1
   node src/index.js search 序列
-  node src/index.js search-download 第一序列
+  node src/index.js search-download 第一序列 --auto
   node src/index.js download 6174
   node src/index.js classics
-  node src/index.js analyze uuid-xxx
-  node src/index.js outline create uuid-xxx --genre 玄幻
-  node src/index.js chapter write uuid-xxx 1
+  node src/index.js list
+  node src/index.js outline smart "我想写一本无限流的小说"
+  node src/index.js outline smart "都市异能，主角觉醒超能力" --title 我的小说
+  node src/index.js analyze 1
+  node src/index.js outline create 1 --genre 玄幻
+  node src/index.js chapter write 1 1
 `);
 }
 
@@ -1007,6 +1187,7 @@ export default {
   showProgress,
   analyzeNovel,
   createOutline,
+  smartOutlineCreate,
   reviewOutline,
   optimizeOutline,
   writeChapter,
