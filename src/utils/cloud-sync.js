@@ -60,10 +60,11 @@ export const syncToCloud = async (localDir, cloudDir, options = {}) => {
   try {
     // 使用 upload 命令上传目录
     // upload <本地文件/目录路径> <云盘目录路径>
+    // 注意：aliyunpan 会将源目录名作为子目录添加到目标路径中
     const command = `aliyunpan upload "${localDir}" "${cloudDir}"`;
 
     if (!silent) {
-      logger.info(`同步到云盘: ${path.basename(localDir)} -> ${cloudDir}`);
+      logger.info(`同步到云盘: ${path.basename(localDir)} -> ${cloudDir}/${path.basename(localDir)}`);
     }
 
     const { stdout, stderr } = await execAsync(command, {
@@ -98,7 +99,8 @@ export const syncToCloud = async (localDir, cloudDir, options = {}) => {
  */
 export const syncClassicNovels = async (options = {}) => {
   const localDir = config.classicNovels.dir;
-  const cloudDir = `${CLOUD_BASE_DIR}/classic_novels`;
+  // 上传到父目录，aliyunpan 会自动添加子目录名
+  const cloudDir = CLOUD_BASE_DIR;
 
   return await syncToCloud(localDir, cloudDir, options);
 };
@@ -110,7 +112,8 @@ export const syncClassicNovels = async (options = {}) => {
  */
 export const syncWorkspaces = async (options = {}) => {
   const localDir = config.workspace.dir;
-  const cloudDir = `${CLOUD_BASE_DIR}/workspaces`;
+  // 上传到父目录，aliyunpan 会自动添加子目录名
+  const cloudDir = CLOUD_BASE_DIR;
 
   return await syncToCloud(localDir, cloudDir, options);
 };
