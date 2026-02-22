@@ -112,6 +112,40 @@ node src/index.js chapter write <book-id> 1
 node src/index.js chapter review <book-id> 1
 ```
 
+### 云盘同步
+
+```bash
+# 查看云盘同步状态
+node src/index.js sync-status
+
+# 手动同步所有数据到阿里云盘
+node src/index.js sync
+```
+
+## 阿里云盘同步
+
+系统支持自动将数据同步到阿里云盘，使用 [aliyunpan](https://github.com/tickstep/aliyunpan) CLI 工具。
+
+### 安装和登录
+
+```bash
+# Windows
+winget install tickstep.aliyunpan --silent
+
+# 登录
+aliyunpan login
+```
+
+### 自动同步
+
+以下操作完成后会自动同步到 `/novel-author-agent/` 目录：
+- 下载经典小说
+- 智能大纲创作
+- 删除工作空间
+- 删除经典小说
+
+> 如果工具未安装或未登录，同步会跳过但不会影响主流程。
+
 ## 典型工作流程
 
 ### 推荐流程：智能大纲创作

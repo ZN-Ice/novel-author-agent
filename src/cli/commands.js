@@ -52,6 +52,7 @@ import {
 import path from 'path';
 import config from '../../config/index.js';
 import { validateConfig } from '../../config/index.js';
+import { syncClassicNovels, syncWorkspaces, syncAllToCloud } from '../utils/cloud-sync.js';
 
 const logger = getLogger();
 
@@ -207,6 +208,15 @@ export async function downloadBook(bookId) {
     console.log(chalk.white(`  章节数: ${novelData.chapterCount}`));
     console.log(chalk.white(`  总字数: ${novelData.totalWords}`));
     console.log(chalk.white(`  目录: ${novelDir.path}`));
+
+    // 同步到云盘
+    output.info('同步到阿里云盘...');
+    const syncResult = await syncClassicNovels();
+    if (syncResult.success) {
+      output.success('云盘同步完成');
+    } else {
+      output.warn(`云盘同步跳过: ${syncResult.error}`);
+    }
 
     return {
       seq,
@@ -683,6 +693,15 @@ export async function smartOutlineCreate(description, options = {}) {
       console.log();
       console.log(chalk.white(result.content.substring(0, 800) + '...'));
 
+      // 同步到云盘
+      output.info('同步到阿里云盘...');
+      const syncResult = await syncWorkspaces();
+      if (syncResult.success) {
+        output.success('云盘同步完成');
+      } else {
+        output.warn(`云盘同步跳过: ${syncResult.error}`);
+      }
+
       return {
         success: true,
         workspace,
@@ -954,6 +973,15 @@ export async function cleanBook(bookId) {
 
   if (result) {
     output.success('清理完成');
+
+    // 同步到云盘
+    output.info('同步到阿里云盘...');
+    const syncResult = await syncWorkspaces();
+    if (syncResult.success) {
+      output.success('云盘同步完成');
+    } else {
+      output.warn(`云盘同步跳过: ${syncResult.error}`);
+    }
   } else {
     output.error('清理失败');
   }
@@ -1264,6 +1292,15 @@ export async function deleteClassicNovel(seqOrDirName) {
 
   if (result) {
     output.success(`已删除: ${meta.title}`);
+
+    // 同步到云盘
+    output.info('同步到阿里云盘...');
+    const syncResult = await syncClassicNovels();
+    if (syncResult.success) {
+      output.success('云盘同步完成');
+    } else {
+      output.warn(`云盘同步跳过: ${syncResult.error}`);
+    }
   } else {
     output.error('删除失败');
   }
@@ -1285,6 +1322,55 @@ export async function rebuildClassicNovelsIndex() {
   console.log(chalk.white(`  下一个序号: ${index.nextSeq}`));
 
   return index;
+}
+
+/**
+ * 手动同步到阿里云盘
+ */
+export async function syncToCloud() {
+  output.title('同步数据到阿里云盘');
+
+  const result = await syncAllToCloud();
+
+  console.log();
+  console.log(chalk.cyan('同步结果:'));
+  console.log(chalk.white(`  经典小说: ${result.results.classicNovels?.success ? '成功' : '失败'}`));
+  console.log(chalk.white(`  工作空间: ${result.results.workspaces?.success ? '成功' : '失败'}`));
+
+  if (result.success) {
+    output.success('所有数据同步完成');
+  } else {
+    output.warn('部分数据同步失败');
+    if (!result.results.classicNovels?.success) {
+      console.log(chalk.yellow(`  经典小说失败原因: ${result.results.classicNovels?.error}`));
+    }
+    if (!result.results.workspaces?.success) {
+      console.log(chalk.yellow(`  工作空间失败原因: ${result.results.workspaces?.error}`));
+    }
+  }
+
+  return result;
+}
+
+/**
+ * 查看云盘同步状态
+ */
+export async function checkSyncStatus() {
+  output.title('云盘同步状态');
+
+  const { isAliyunpanAvailable, checkSyncStatus: getStatus } = await import('../utils/cloud-sync.js');
+  const status = await getStatus();
+
+  console.log();
+  console.log(chalk.white(`  CLI工具: ${status.tool}`));
+  console.log(chalk.white(`  状态: ${status.available ? chalk.green('可用') : chalk.red('不可用')}`));
+  console.log(chalk.white(`  云盘目录: ${status.cloudBaseDir}`));
+  console.log();
+  console.log(chalk.cyan('本地目录:'));
+  console.log(chalk.white(`  经典小说: ${status.localDirs.classicNovels}`));
+  console.log(chalk.white(`  工作空间: ${status.localDirs.workspaces}`));
+
+  return status;
 }
 
 export default {
@@ -1309,4 +1395,6 @@ export default {
   searchAndDownload,
   deleteClassicNovel,
   rebuildClassicNovelsIndex,
+  syncToCloud,
+  checkSyncStatus,
 };

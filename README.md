@@ -207,6 +207,55 @@ novel-author-agent/
 | `outline optimize <bookId>` | 优化大纲 |
 | `chapter write <bookId> <num>` | 创作章节 |
 | `chapter review <bookId> <num>` | 评价章节 |
+| `sync` | 手动同步数据到阿里云盘 |
+| `sync-status` | 查看云盘同步状态 |
+
+## 阿里云盘同步
+
+本系统支持将数据自动同步到阿里云盘，使用 [aliyunpan](https://github.com/tickstep/aliyunpan) CLI 工具。
+
+### 安装 aliyunpan
+
+```bash
+# Windows (winget)
+winget install tickstep.aliyunpan --silent
+
+# macOS (brew)
+brew install aliyunpan
+
+# Linux
+wget https://github.com/tickstep/aliyunpan/releases/download/v0.3.7/aliyunpan-v0.3.7-linux-amd64.zip
+unzip aliyunpan-v0.3.7-linux-amd64.zip
+cd aliyunpan-v0.3.7-linux-amd64
+./aliyunpan
+```
+
+### 登录阿里云盘
+
+```bash
+aliyunpan login
+# 在浏览器中完成授权和扫码登录
+```
+
+### 自动同步
+
+以下操作完成后会自动同步到阿里云盘的 `/novel-author-agent/` 目录：
+- 下载经典小说 (`download`)
+- 智能大纲创作 (`outline smart`)
+- 删除工作空间 (`clean`)
+- 删除经典小说 (`delete-classic`)
+
+### 手动同步
+
+```bash
+# 手动同步所有数据
+node src/index.js sync
+
+# 查看同步状态
+node src/index.js sync-status
+```
+
+> **注意**: 如果 aliyunpan CLI 工具未安装或未登录，同步会跳过但不会影响主流程。
 
 ## 评价维度
 

@@ -220,6 +220,24 @@ program
     process.exit(0);
   });
 
+// sync 命令 - 同步到阿里云盘
+program
+  .command('sync')
+  .description('手动同步数据到阿里云盘')
+  .action(async () => {
+    await commands.syncToCloud();
+    process.exit(0);
+  });
+
+// sync-status 命令 - 查看同步状态
+program
+  .command('sync-status')
+  .description('查看云盘同步状态')
+  .action(async () => {
+    await commands.checkSyncStatus();
+    process.exit(0);
+  });
+
 // 错误处理
 program.exitOverride((err) => {
   if (err.code === 'commander.help' || err.code === 'commander.version' || err.code === 'commander.helpDisplayed') {
