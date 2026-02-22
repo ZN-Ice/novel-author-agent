@@ -84,16 +84,19 @@ export const createPage = async () => {
  * @returns {Promise<Page>}
  */
 export const gotoPage = async (page, url, options = {}) => {
-  const { waitUntil = 'networkidle2', timeout = config.scraper.timeout } = options;
+  const { waitUntil = 'domcontentloaded', timeout = 60000 } = options;
 
   logger.debug(`访问页面: ${url}`);
   await page.goto(url, { waitUntil, timeout });
 
-  // 等待 Angular 渲染完成
+  // 等待页面完全加载
   await page.waitForFunction(
     () => document.readyState === 'complete',
-    { timeout: 5000 }
+    { timeout: 10000 }
   ).catch(() => {});
+
+  // 额外等待Angular渲染
+  await delay(3000);
 
   return page;
 };

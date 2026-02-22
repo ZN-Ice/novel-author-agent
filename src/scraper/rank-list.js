@@ -18,9 +18,12 @@ const parseRankList = (html) => {
   const $ = cheerio.load(html);
   const books = [];
 
-  // 查找排行榜中的书籍条目
-  $('a[href*="/book/"]').each((_, element) => {
-    const $link = $(element);
+  // 查找排行榜中的书籍条目 - 使用更精确的选择器
+  $('mio-tile').each((_, element) => {
+    const $tile = $(element);
+
+    // 获取链接
+    const $link = $tile.find('a[href*="/book/"]');
     const href = $link.attr('href');
 
     // 提取书籍ID
@@ -29,17 +32,25 @@ const parseRankList = (html) => {
 
     const bookId = match[1];
 
-    // 获取标题（从链接文本或子元素）
-    let title = $link.text().trim();
+    // 获取标题 - 从 span.link 或 h3.header 中获取
+    let title = $tile.find('span.link').text().trim();
+    if (!title) {
+      title = $tile.find('h3.header').text().trim();
+    }
+    if (!title) {
+      title = $link.text().trim();
+    }
 
-    // 如果标题为空或包含"下载"，跳过
-    if (!title || title.includes('下载') || title.includes('阅读')) {
+    // 清理标题
+    title = title.replace(/《|》/g, '').trim();
+
+    // 如果标题为空，跳过
+    if (!title) {
       return;
     }
 
     // 提取下载量
-    const $parent = $link.closest('div, li, article');
-    const downloadsText = $parent.find('.downloads').text();
+    const downloadsText = $tile.find('.downloads').text();
     const downloadsMatch = downloadsText?.match(/(\d+)/);
     const downloads = downloadsMatch ? parseInt(downloadsMatch[1]) : 0;
 
@@ -50,11 +61,39 @@ const parseRankList = (html) => {
 
     books.push({
       id: bookId,
-      title: title.replace(/《|》/g, '').trim(),
+      title,
       url: `${config.scraper.baseUrl}/book/${bookId}.html`,
       downloads,
     });
   });
+
+  // 备用方案：如果没有找到mio-tile，使用旧方法
+  if (books.length === 0) {
+    $('a[href*="/book/"]').each((_, element) => {
+      const $link = $(element);
+      const href = $link.attr('href');
+      const match = href?.match(/\/book\/(\d+)\.html/);
+      if (!match) return;
+
+      const bookId = match[1];
+      let title = $link.find('span.link').text().trim() || $link.text().trim();
+      title = title.replace(/《|》/g, '').trim();
+
+      if (!title || books.some((b) => b.id === bookId)) return;
+
+      const $parent = $link.closest('mio-tile, div, li, article');
+      const downloadsText = $parent.find('.downloads').text();
+      const downloadsMatch = downloadsText?.match(/(\d+)/);
+      const downloads = downloadsMatch ? parseInt(downloadsMatch[1]) : 0;
+
+      books.push({
+        id: bookId,
+        title,
+        url: `${config.scraper.baseUrl}/book/${bookId}.html`,
+        downloads,
+      });
+    });
+  }
 
   return books;
 };
@@ -71,9 +110,25 @@ export const getRankPage = async (page = 1) => {
   const puppeteerPage = await createPage();
   try {
     await gotoPage(puppeteerPage, url);
-    await delay(1000); // 等待内容渲染
+
+    // 等待Angular渲染完成 - 等待书籍链接出现
+    try {
+      await puppeteerPage.waitForSelector('a[href*="/book/"]', { timeout: 10000 });
+    } catch {
+      logger.warn('等待书籍链接超时，尝试直接解析');
+    }
+
+    await delay(2000); // 额外等待内容渲染
 
     const html = await getHtml(puppeteerPage);
+
+    // 调试：保存HTML到文件
+    if (process.env.DEBUG) {
+      const fs = await import('fs');
+      await fs.promises.writeFile('debug-rank.html', html);
+      logger.debug('HTML已保存到 debug-rank.html');
+    }
+
     const books = parseRankList(html);
 
     logger.info(`第 ${page} 页获取到 ${books.length} 本书`);
