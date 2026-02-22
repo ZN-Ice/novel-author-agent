@@ -17,6 +17,7 @@ import {
   getWorkspacePath,
   getFilePath,
   deleteWorkspace,
+  rebuildIndex,
 } from '../workspace/manager.js';
 import {
   getProgress,
@@ -245,16 +246,21 @@ export async function downloadTopBooks(count = 5) {
  * 列出所有书籍
  */
 export async function listBooks() {
-  output.title('书籍列表');
+  output.title('工作空间列表');
 
   const books = await listWorkspaces();
 
   if (books.length === 0) {
-    output.info('暂无书籍');
+    output.info('暂无工作空间');
+    output.info('使用以下命令创建：');
+    console.log(chalk.gray('  node src/index.js outline smart "我想写一本玄幻小说"'));
     return [];
   }
 
-  books.forEach((book, index) => {
+  console.log(chalk.dim('序号  小说名                        状态'));
+  console.log(chalk.dim('─'.repeat(50)));
+
+  books.forEach((book) => {
     const statusColors = {
       created: 'gray',
       downloaded: 'blue',
@@ -264,15 +270,34 @@ export async function listBooks() {
       completed: 'green',
     };
     const statusColor = statusColors[book.status] || 'white';
+    const statusText = {
+      created: '已创建',
+      downloaded: '已下载',
+      analyzing: '分析中',
+      outlining: '大纲中',
+      writing: '写作中',
+      completed: '已完成',
+    };
+    const status = statusText[book.status] || book.status;
+
+    // 格式化序号和标题
+    const seq = String(book.seq || '?').padEnd(4);
+    const title = (book.title || '未命名').substring(0, 20).padEnd(22);
 
     console.log(
-      chalk.dim(`${index + 1}.`),
-      chalk.white(book.title),
-      chalk.gray(`(${book.author})`),
-      chalk[statusColor](`[${book.status}]`),
-      chalk.dim(book.id.substring(0, 8))
+      chalk.cyan(`#${seq}`),
+      chalk.white(title),
+      chalk[statusColor](status)
     );
   });
+
+  console.log();
+  output.info(`共 ${books.length} 个工作空间`);
+  console.log();
+  output.info('使用序号操作：');
+  console.log(chalk.gray('  node src/index.js info 1'));
+  console.log(chalk.gray('  node src/index.js outline review 1'));
+  console.log(chalk.gray('  node src/index.js chapter write 1 1'));
 
   return books;
 }
@@ -285,11 +310,11 @@ export async function showBookInfo(bookId) {
 
   const meta = await getMeta(bookId);
   if (!meta) {
-    output.error('书籍不存在');
+    output.error(`书籍不存在: #${bookId}`);
     return null;
   }
 
-  console.log(chalk.white(`  ID: ${meta.id}`));
+  console.log(chalk.cyan(`  序号: #${meta.seq || bookId}`));
   console.log(chalk.white(`  书名: ${meta.title}`));
   console.log(chalk.white(`  作者: ${meta.author}`));
   console.log(chalk.white(`  分类: ${meta.category || '未知'}`));
@@ -933,6 +958,22 @@ export async function cleanBook(bookId) {
 }
 
 /**
+ * 重建索引
+ */
+export async function rebuildWorkspaceIndex() {
+  output.title('重建工作空间索引');
+
+  const index = await rebuildIndex();
+
+  output.success(`索引重建完成`);
+  console.log();
+  console.log(chalk.white(`  工作空间数: ${Object.keys(index.books).length}`));
+  console.log(chalk.white(`  下一个序号: ${index.nextSeq}`));
+
+  return index;
+}
+
+/**
  * 显示帮助信息
  */
 export function showHelp() {
@@ -1193,6 +1234,7 @@ export default {
   writeChapter,
   reviewChapter,
   cleanBook,
+  rebuildWorkspaceIndex,
   showHelp,
   searchBook,
   searchAndDownload,

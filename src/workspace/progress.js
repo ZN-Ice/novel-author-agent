@@ -6,6 +6,7 @@ import path from 'path';
 import config from '../../config/index.js';
 import getLogger from '../utils/logger.js';
 import { readJson, writeJson } from '../utils/file-utils.js';
+import { resolveBookId } from './manager.js';
 
 const logger = getLogger();
 
@@ -42,50 +43,59 @@ export const ACTIONS = {
 
 /**
  * 获取进展记录
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @returns {Promise<Object>} 进展记录
  */
-export const getProgress = async (bookId) => {
-  const progressPath = path.join(config.workspace.dir, bookId, 'progress.json');
+export const getProgress = async (seqOrId) => {
+  const dirName = await resolveBookId(seqOrId);
+  if (!dirName) {
+    return { bookId: seqOrId, history: [] };
+  }
+  const progressPath = path.join(config.workspace.dir, dirName, 'progress.json');
   const progress = await readJson(progressPath);
-  return progress || { bookId, history: [] };
+  return progress || { bookId: dirName, history: [] };
 };
 
 /**
  * 添加进展记录
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @param {Object} entry - 进展条目
  * @returns {Promise<Object>} 更新后的进展记录
  */
-export const addProgress = async (bookId, entry) => {
-  const progress = await getProgress(bookId);
+export const addProgress = async (seqOrId, entry) => {
+  const dirName = await resolveBookId(seqOrId);
+  if (!dirName) {
+    throw new Error(`书籍不存在: ${seqOrId}`);
+  }
+
+  const progress = await getProgress(dirName);
 
   const newEntry = {
     timestamp: new Date().toISOString(),
     phase: entry.phase || PHASES.CREATED,
     action: entry.action || '',
-    status: entry.status || 'in_progress', // in_progress, completed, failed
+    status: entry.status || 'in_progress',
     details: entry.details || {},
     error: entry.error || null,
   };
 
   progress.history.push(newEntry);
 
-  const progressPath = path.join(config.workspace.dir, bookId, 'progress.json');
+  const progressPath = path.join(config.workspace.dir, dirName, 'progress.json');
   await writeJson(progressPath, progress);
 
-  logger.debug(`添加进展记录: ${bookId} - ${newEntry.action}`);
+  logger.debug(`添加进展记录: #${seqOrId} - ${newEntry.action}`);
 
   return progress;
 };
 
 /**
  * 获取最新进展
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @returns {Promise<Object|null>} 最新进展条目
  */
-export const getLatestProgress = async (bookId) => {
-  const progress = await getProgress(bookId);
+export const getLatestProgress = async (seqOrId) => {
+  const progress = await getProgress(seqOrId);
   if (progress.history.length === 0) {
     return null;
   }
@@ -94,22 +104,22 @@ export const getLatestProgress = async (bookId) => {
 
 /**
  * 获取指定阶段的进展
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @param {string} phase - 阶段
  * @returns {Promise<Array>} 阶段进展列表
  */
-export const getProgressByPhase = async (bookId, phase) => {
-  const progress = await getProgress(bookId);
+export const getProgressByPhase = async (seqOrId, phase) => {
+  const progress = await getProgress(seqOrId);
   return progress.history.filter((entry) => entry.phase === phase);
 };
 
 /**
  * 获取进展统计
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @returns {Promise<Object>} 统计信息
  */
-export const getProgressStats = async (bookId) => {
-  const progress = await getProgress(bookId);
+export const getProgressStats = async (seqOrId) => {
+  const progress = await getProgress(seqOrId);
   const history = progress.history;
 
   const stats = {
@@ -122,18 +132,15 @@ export const getProgressStats = async (bookId) => {
   };
 
   for (const entry of history) {
-    // 状态统计
     if (entry.status === 'completed') stats.completedCount++;
     else if (entry.status === 'failed') stats.failedCount++;
     else stats.inProgressCount++;
 
-    // 阶段统计
     if (!stats.phaseCounts[entry.phase]) {
       stats.phaseCounts[entry.phase] = 0;
     }
     stats.phaseCounts[entry.phase]++;
 
-    // 最后活动时间
     if (!stats.lastActivity || new Date(entry.timestamp) > new Date(stats.lastActivity)) {
       stats.lastActivity = entry.timestamp;
     }
@@ -144,24 +151,28 @@ export const getProgressStats = async (bookId) => {
 
 /**
  * 清除进展历史
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @returns {Promise<void>}
  */
-export const clearProgress = async (bookId) => {
-  const progressPath = path.join(config.workspace.dir, bookId, 'progress.json');
-  await writeJson(progressPath, { bookId, history: [] });
-  logger.info(`清除进展历史: ${bookId}`);
+export const clearProgress = async (seqOrId) => {
+  const dirName = await resolveBookId(seqOrId);
+  if (!dirName) {
+    throw new Error(`书籍不存在: ${seqOrId}`);
+  }
+  const progressPath = path.join(config.workspace.dir, dirName, 'progress.json');
+  await writeJson(progressPath, { bookId: dirName, history: [] });
+  logger.info(`清除进展历史: #${seqOrId}`);
 };
 
 /**
  * 标记操作完成
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @param {string} action - 操作名称
  * @param {Object} details - 详情
  * @returns {Promise<Object>}
  */
-export const markCompleted = async (bookId, action, details = {}) => {
-  return await addProgress(bookId, {
+export const markCompleted = async (seqOrId, action, details = {}) => {
+  return await addProgress(seqOrId, {
     action,
     status: 'completed',
     details,
@@ -170,13 +181,13 @@ export const markCompleted = async (bookId, action, details = {}) => {
 
 /**
  * 标记操作失败
- * @param {string} bookId - 书籍ID
+ * @param {string|number} seqOrId - 序号或目录名
  * @param {string} action - 操作名称
  * @param {string} error - 错误信息
  * @returns {Promise<Object>}
  */
-export const markFailed = async (bookId, action, error) => {
-  return await addProgress(bookId, {
+export const markFailed = async (seqOrId, action, error) => {
+  return await addProgress(seqOrId, {
     action,
     status: 'failed',
     error,

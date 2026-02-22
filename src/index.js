@@ -193,6 +193,15 @@ program
     process.exit(0);
   });
 
+// rebuild-index 命令
+program
+  .command('rebuild-index')
+  .description('重建工作空间索引')
+  .action(async () => {
+    await commands.rebuildWorkspaceIndex();
+    process.exit(0);
+  });
+
 // 错误处理
 program.exitOverride((err) => {
   if (err.code === 'commander.help' || err.code === 'commander.version' || err.code === 'commander.helpDisplayed') {
