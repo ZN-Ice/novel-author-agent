@@ -27,20 +27,43 @@ export const downloadNovel = async (downloadUrl, savePath, options = {}) => {
     // 确保目录存在
     await ensureDir(path.dirname(savePath));
 
-    // 下载文件
+    // 使用流式下载，支持大文件
+    const { default: stream } = await import('stream');
+    const { promisify } = await import('util');
+    const pipeline = promisify(stream.pipeline);
+
     const response = await axios({
       method: 'GET',
       url: downloadUrl,
-      responseType: 'arraybuffer',
-      timeout: config.scraper.timeout * 2,
+      responseType: 'stream',
+      timeout: 600000, // 10分钟超时
       headers: {
         'User-Agent': config.scraper.userAgent,
         'Referer': config.scraper.baseUrl,
       },
     });
 
-    // 获取原始数据
-    const buffer = Buffer.from(response.data);
+    // 收集数据块
+    const chunks = [];
+    let totalSize = 0;
+
+    await new Promise((resolve, reject) => {
+      response.data.on('data', (chunk) => {
+        chunks.push(chunk);
+        totalSize += chunk.length;
+        // 每10MB输出一次进度
+        if (totalSize % (10 * 1024 * 1024) < chunk.length) {
+          logger.info(`下载进度: ${formatFileSize(totalSize)}`);
+        }
+      });
+
+      response.data.on('end', resolve);
+      response.data.on('error', reject);
+    });
+
+    // 合并所有数据块
+    const buffer = Buffer.concat(chunks);
+    logger.info(`下载完成，总大小: ${formatFileSize(buffer.length)}`);
 
     // 尝试检测编码
     let content;
@@ -59,7 +82,7 @@ export const downloadNovel = async (downloadUrl, savePath, options = {}) => {
     const stats = await fs.stat(savePath);
     const fileSize = formatFileSize(stats.size);
 
-    logger.info(`下载完成: ${savePath} (${fileSize})`);
+    logger.info(`文件保存成功: ${savePath} (${fileSize})`);
 
     return {
       success: true,

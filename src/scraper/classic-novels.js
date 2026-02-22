@@ -1,61 +1,210 @@
 /**
  * 经典小说管理器
- * 管理经典小说的下载、存储和完整性检查
+ * 管理经典小说的下载、存储、章节拆分和分析
+ * 目录结构: classic_novels/{序号_小说名}/
  */
 import fs from 'fs/promises';
 import path from 'path';
 import { existsSync } from 'fs';
 import config from '../../config/index.js';
 import getLogger from '../utils/logger.js';
-import { ensureDir, readJson, writeJson, formatFileSize } from '../utils/file-utils.js';
+import { ensureDir, readJson, writeJson, formatFileSize, writeText, readText } from '../utils/file-utils.js';
 import { parseNovel } from '../parser/novel-parser.js';
 import { getGLMClient } from '../llm/glm-client.js';
 
 const logger = getLogger();
 
 /**
+ * 索引文件路径
+ */
+const getIndexFilePath = () => {
+  return path.join(config.classicNovels.dir, '.index.json');
+};
+
+/**
+ * 读取索引文件
+ */
+const readIndex = async () => {
+  const indexPath = getIndexFilePath();
+  const index = await readJson(indexPath);
+  return index || { nextSeq: 1, novels: {} };
+};
+
+/**
+ * 写入索引文件
+ */
+const writeIndex = async (index) => {
+  const indexPath = getIndexFilePath();
+  await ensureDir(config.classicNovels.dir);
+  await writeJson(indexPath, index);
+};
+
+/**
  * 获取经典小说存储目录
- * @returns {string}
  */
 export const getClassicNovelsDir = () => {
   return config.classicNovels.dir;
 };
 
 /**
- * 获取小说存储路径
- * @param {Object} bookInfo - 书籍信息
- * @returns {string}
+ * 清理文件名中的非法字符
  */
-export const getNovelPath = (bookInfo) => {
-  const safeName = (bookInfo.title || 'unknown').replace(/[\\/:*?"<>|]/g, '_');
-  return path.join(getClassicNovelsDir(), `${safeName}.txt`);
+const sanitizeName = (name) => {
+  return (name || '未命名')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .replace(/\s+/g, '_')
+    .substring(0, 20);
+};
+
+/**
+ * 生成目录名
+ */
+const generateDirName = (seq, title) => {
+  const safeTitle = sanitizeName(title);
+  return `${seq}_${safeTitle}`;
+};
+
+/**
+ * 获取小说目录路径
+ * @param {number|string} seqOrDirName - 序号或目录名
+ * @returns {Promise<string>}
+ */
+export const getNovelDir = async (seqOrDirName) => {
+  // 如果是纯数字，当作序号处理
+  if (/^\d+$/.test(seqOrDirName)) {
+    const seq = parseInt(seqOrDirName);
+    const index = await readIndex();
+    const novelInfo = index.novels[seq];
+    if (novelInfo) {
+      return path.join(config.classicNovels.dir, novelInfo.dirName);
+    }
+    // 扫描目录
+    const novels = await listClassicNovels();
+    const novel = novels.find(n => n.seq === seq);
+    if (novel) {
+      return path.join(config.classicNovels.dir, novel.dirName);
+    }
+    return null;
+  }
+  return path.join(config.classicNovels.dir, seqOrDirName);
+};
+
+/**
+ * 解析序号
+ */
+export const resolveSeq = async (seqOrDirName) => {
+  if (/^\d+$/.test(seqOrDirName)) {
+    return parseInt(seqOrDirName);
+  }
+  // 从目录名提取序号
+  const match = seqOrDirName.match(/^(\d+)_/);
+  return match ? parseInt(match[1]) : null;
+};
+
+/**
+ * 获取小说文件路径
+ */
+export const getNovelPath = async (seqOrDirName) => {
+  const dir = await getNovelDir(seqOrDirName);
+  return dir ? path.join(dir, 'novel.txt') : null;
 };
 
 /**
  * 获取小说元信息路径
- * @param {Object} bookInfo - 书籍信息
- * @returns {string}
  */
-export const getMetaPath = (bookInfo) => {
-  const safeName = (bookInfo.title || 'unknown').replace(/[\\/:*?"<>|]/g, '_');
-  return path.join(getClassicNovelsDir(), `${safeName}.meta.json`);
+export const getMetaPath = async (seqOrDirName) => {
+  const dir = await getNovelDir(seqOrDirName);
+  return dir ? path.join(dir, 'meta.json') : null;
+};
+
+/**
+ * 获取章节目录路径
+ */
+export const getChaptersDir = async (seqOrDirName) => {
+  const dir = await getNovelDir(seqOrDirName);
+  return dir ? path.join(dir, 'chapters') : null;
+};
+
+/**
+ * 获取分析目录路径
+ */
+export const getAnalysisDir = async (seqOrDirName) => {
+  const dir = await getNovelDir(seqOrDirName);
+  return dir ? path.join(dir, 'analysis') : null;
+};
+
+/**
+ * 创建小说目录结构
+ * @param {Object} bookInfo - 书籍信息
+ * @returns {Promise<Object>} 创建结果
+ */
+export const createNovelDir = async (bookInfo) => {
+  const index = await readIndex();
+  const seq = index.nextSeq;
+  const title = bookInfo.title || '未命名';
+  const dirName = generateDirName(seq, title);
+  const novelDir = path.join(config.classicNovels.dir, dirName);
+
+  logger.info(`创建小说目录: #${seq} ${title}`);
+
+  // 创建目录结构
+  await ensureDir(novelDir);
+  await ensureDir(path.join(novelDir, 'chapters'));
+  await ensureDir(path.join(novelDir, 'analysis'));
+
+  // 创建元信息
+  const meta = {
+    seq: seq,
+    dirName: dirName,
+    title: title,
+    author: bookInfo.author || '未知',
+    category: bookInfo.category || '',
+    wordCount: bookInfo.wordCount || '',
+    sourceId: bookInfo.id || null,
+    source: {
+      url: bookInfo.url || '',
+      downloadUrl: bookInfo.downloadUrl || '',
+    },
+    status: 'created', // created, downloaded, parsed, analyzed
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  await writeJson(path.join(novelDir, 'meta.json'), meta);
+
+  // 更新索引
+  index.nextSeq = seq + 1;
+  index.novels[seq] = {
+    dirName: dirName,
+    title: title,
+    createdAt: meta.createdAt,
+  };
+  await writeIndex(index);
+
+  return {
+    seq,
+    dirName,
+    path: novelDir,
+    meta,
+  };
 };
 
 /**
  * 检查小说是否已存在
- * @param {Object} bookInfo - 书籍信息
- * @returns {Promise<boolean>}
  */
-export const novelExists = async (bookInfo) => {
-  const novelPath = getNovelPath(bookInfo);
-  return existsSync(novelPath);
+export const novelExists = async (seqOrTitle) => {
+  // 如果是序号
+  if (/^\d+$/.test(seqOrTitle)) {
+    const index = await readIndex();
+    return !!index.novels[parseInt(seqOrTitle)];
+  }
+  // 按标题查找
+  const novels = await listClassicNovels();
+  return novels.some(n => n.title === seqOrTitle);
 };
 
 /**
  * 脚本检查小说完整性
- * @param {string} filePath - 文件路径
- * @param {Object} bookInfo - 书籍信息
- * @returns {Promise<Object>} 检查结果
  */
 export const checkIntegrityByScript = async (filePath, bookInfo) => {
   const result = {
@@ -65,22 +214,18 @@ export const checkIntegrityByScript = async (filePath, bookInfo) => {
   };
 
   try {
-    // 检查文件是否存在
     if (!existsSync(filePath)) {
       result.issues.push('文件不存在');
       return result;
     }
 
-    // 读取文件内容
     const content = await fs.readFile(filePath, 'utf-8');
 
-    // 基本检查
     if (!content || content.length < 1000) {
       result.issues.push('文件内容过短');
       return result;
     }
 
-    // 解析小说结构
     const novelData = await parseNovel(filePath);
 
     result.stats = {
@@ -88,33 +233,19 @@ export const checkIntegrityByScript = async (filePath, bookInfo) => {
       fileSizeFormatted: formatFileSize(content.length),
       chapterCount: novelData.chapterCount,
       totalWords: novelData.totalWords,
-      avgWordsPerChapter: novelData.chapterStats.avgWords,
+      avgWordsPerChapter: novelData.chapterStats?.avgWords || 0,
     };
 
-    // 检查章节数量
     if (novelData.chapterCount < 10) {
       result.issues.push(`章节数量过少 (${novelData.chapterCount} 章)`);
     }
 
-    // 检查字数
     const expectedWords = parseWordCount(bookInfo.wordCount);
     if (expectedWords > 0 && novelData.totalWords < expectedWords * 0.5) {
-      result.issues.push(`字数严重不足 (期望约${expectedWords}字，实际${novelData.totalWords}字)`);
+      result.issues.push(`字数严重不足`);
     }
 
-    // 检查是否有明显的截断
-    const lastChapter = novelData.chapters[novelData.chapters.length - 1];
-    if (lastChapter && lastChapter.content) {
-      const lastContent = lastChapter.content.trim();
-      // 检查是否有明显的未完结标志
-      if (lastContent.endsWith('...') || lastContent.endsWith('未完待续')) {
-        result.issues.push('最后一章可能被截断');
-      }
-    }
-
-    // 判断是否通过
     result.valid = result.issues.length === 0 && novelData.chapterCount >= 10;
-
     return result;
   } catch (error) {
     result.issues.push(`解析错误: ${error.message}`);
@@ -124,12 +255,9 @@ export const checkIntegrityByScript = async (filePath, bookInfo) => {
 
 /**
  * 解析字数字符串
- * @param {string} wordCountStr - 字数字符串（如 "446.53万"）
- * @returns {number}
  */
 const parseWordCount = (wordCountStr) => {
   if (!wordCountStr) return 0;
-
   const match = wordCountStr.match(/([\d.]+)\s*(万|千|百万)?/);
   if (!match) return 0;
 
@@ -137,254 +265,193 @@ const parseWordCount = (wordCountStr) => {
   const unit = match[2];
 
   switch (unit) {
-    case '万':
-      return Math.round(num * 10000);
-    case '千':
-      return Math.round(num * 1000);
-    case '百万':
-      return Math.round(num * 1000000);
-    default:
-      return Math.round(num);
+    case '万': return Math.round(num * 10000);
+    case '千': return Math.round(num * 1000);
+    case '百万': return Math.round(num * 1000000);
+    default: return Math.round(num);
   }
 };
 
 /**
- * 使用大模型检查小说完整性
- * @param {string} filePath - 文件路径
- * @param {Object} bookInfo - 书籍信息
- * @param {Object} scriptResult - 脚本检查结果
- * @returns {Promise<Object>} 检查结果
+ * 更新小说元信息
  */
-export const checkIntegrityByLLM = async (filePath, bookInfo, scriptResult) => {
-  const llm = getGLMClient();
+export const updateNovelMeta = async (seqOrDirName, updates) => {
+  const metaPath = await getMetaPath(seqOrDirName);
+  if (!metaPath) return null;
 
-  try {
-    // 读取文件的开头和结尾部分
-    const content = await fs.readFile(filePath, 'utf-8');
-    const headContent = content.substring(0, 2000);
-    const tailContent = content.substring(Math.max(0, content.length - 2000));
+  const meta = await readJson(metaPath);
+  if (!meta) return null;
 
-    // 获取章节标题样本
-    const novelData = await parseNovel(filePath);
-    const chapterSamples = novelData.chapters.slice(0, 5).map(c => c.title)
-      .concat(novelData.chapters.slice(-5).map(c => c.title));
-
-    const prompt = `请检查以下小说文件的完整性。
-
-**书籍信息**:
-- 书名: ${bookInfo.title}
-- 作者: ${bookInfo.author}
-- 预期字数: ${bookInfo.wordCount || '未知'}
-
-**脚本检查结果**:
-- 文件大小: ${scriptResult.stats.fileSizeFormatted}
-- 章节数: ${scriptResult.stats.chapterCount}
-- 总字数: ${scriptResult.stats.totalWords}
-- 问题: ${scriptResult.issues.length > 0 ? scriptResult.issues.join(', ') : '无'}
-
-**开头内容**:
-${headContent}
-
-**结尾内容**:
-${tailContent}
-
-**章节标题样本**:
-${chapterSamples.join('\n')}
-
-请判断这本小说是否完整，用JSON格式回复：
-{
-  "isComplete": true/false,
-  "confidence": 0.0-1.0,
-  "analysis": "简要分析",
-  "issues": ["问题1", "问题2"]
-}`;
-
-    const result = await llm.sendMessage(
-      '你是一个专业的小说编辑，擅长检查小说内容的完整性和质量。',
-      prompt
-    );
-
-    if (result.success) {
-      // 尝试解析JSON
-      try {
-        let jsonStr = result.content;
-        const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
-        if (jsonMatch) {
-          jsonStr = jsonMatch[1];
-        }
-        const llmResult = JSON.parse(jsonStr);
-        return {
-          valid: llmResult.isComplete && llmResult.confidence > 0.7,
-          confidence: llmResult.confidence,
-          analysis: llmResult.analysis,
-          issues: llmResult.issues || [],
-        };
-      } catch {
-        // JSON解析失败，根据内容判断
-        const isComplete = result.content.includes('完整') && !result.content.includes('不完整');
-        return {
-          valid: isComplete,
-          confidence: 0.5,
-          analysis: result.content.substring(0, 500),
-          issues: [],
-        };
-      }
-    }
-
-    return {
-      valid: false,
-      confidence: 0,
-      analysis: 'LLM检查失败',
-      issues: [result.error],
-    };
-  } catch (error) {
-    return {
-      valid: false,
-      confidence: 0,
-      analysis: `LLM检查异常: ${error.message}`,
-      issues: [error.message],
-    };
-  }
-};
-
-/**
- * 综合检查小说完整性
- * @param {Object} bookInfo - 书籍信息
- * @param {boolean} useLLM - 是否使用LLM检查
- * @returns {Promise<Object>} 检查结果
- */
-export const checkNovelIntegrity = async (bookInfo, useLLM = true) => {
-  const filePath = getNovelPath(bookInfo);
-
-  // 首先检查文件是否存在
-  const exists = await novelExists(bookInfo);
-  if (!exists) {
-    return {
-      exists: false,
-      valid: false,
-      scriptCheck: null,
-      llmCheck: null,
-    };
-  }
-
-  // 脚本检查
-  const scriptCheck = await checkIntegrityByScript(filePath, bookInfo);
-
-  // 如果脚本检查通过（没有问题），直接认为完整
-  if (scriptCheck.valid) {
-    // 可选：使用LLM进行补充验证，但不影响最终结果
-    let llmCheck = null;
-    if (useLLM) {
-      try {
-        llmCheck = await checkIntegrityByLLM(filePath, bookInfo, scriptCheck);
-      } catch (error) {
-        logger.warn(`LLM检查失败: ${error.message}`);
-      }
-    }
-
-    return {
-      exists: true,
-      valid: true, // 脚本检查通过，直接认为完整
-      scriptCheck,
-      llmCheck,
-    };
-  }
-
-  // 脚本检查发现问题，使用LLM进一步确认
-  if (useLLM) {
-    const llmCheck = await checkIntegrityByLLM(filePath, bookInfo, scriptCheck);
-
-    // 如果LLM确认有问题，则认为不完整
-    // 如果LLM认为完整且置信度高，可以覆盖脚本检查结果
-    if (llmCheck.valid && llmCheck.confidence > 0.8) {
-      return {
-        exists: true,
-        valid: true,
-        scriptCheck,
-        llmCheck,
-      };
-    }
-
-    return {
-      exists: true,
-      valid: false,
-      scriptCheck,
-      llmCheck,
-    };
-  }
-
-  return {
-    exists: true,
-    valid: false,
-    scriptCheck,
-    llmCheck: null,
-  };
-};
-
-/**
- * 保存小说元信息
- * @param {Object} bookInfo - 书籍信息
- * @param {Object} checkResult - 检查结果
- */
-export const saveNovelMeta = async (bookInfo, checkResult) => {
-  const metaPath = getMetaPath(bookInfo);
-  const meta = {
-    ...bookInfo,
-    checkedAt: new Date().toISOString(),
-    integrity: {
-      valid: checkResult.valid,
-      scriptCheck: checkResult.scriptCheck?.stats || {},
-      llmCheck: checkResult.llmCheck ? {
-        confidence: checkResult.llmCheck.confidence,
-        analysis: checkResult.llmCheck.analysis,
-      } : null,
-    },
+  const updatedMeta = {
+    ...meta,
+    ...updates,
+    updatedAt: new Date().toISOString(),
   };
 
-  await writeJson(metaPath, meta);
+  await writeJson(metaPath, updatedMeta);
+  return updatedMeta;
 };
 
 /**
- * 读取小说元信息
- * @param {Object} bookInfo - 书籍信息
- * @returns {Promise<Object|null>}
+ * 保存章节拆分结果
  */
-export const readNovelMeta = async (bookInfo) => {
-  const metaPath = getMetaPath(bookInfo);
-  return await readJson(metaPath);
+export const saveChapterSplits = async (seqOrDirName, novelData) => {
+  const chaptersDir = await getChaptersDir(seqOrDirName);
+  if (!chaptersDir) return false;
+
+  // 保存章节索引
+  const indexData = {
+    totalChapters: novelData.chapterCount,
+    totalWords: novelData.totalWords,
+    chapters: novelData.chapters.map(c => ({
+      number: c.number,
+      title: c.title,
+      wordCount: c.wordCount,
+    })),
+  };
+  await writeJson(path.join(chaptersDir, '.index.json'), indexData);
+
+  // 保存各章节内容
+  for (const chapter of novelData.chapters) {
+    const chapterPath = path.join(chaptersDir, `${String(chapter.number).padStart(4, '0')}.txt`);
+    const content = `【${chapter.title}】\n\n${chapter.content}`;
+    await writeText(chapterPath, content);
+  }
+
+  logger.info(`章节拆分完成: ${novelData.chapterCount} 章`);
+  return true;
 };
 
 /**
  * 列出所有已下载的经典小说
- * @returns {Promise<Array>}
  */
 export const listClassicNovels = async () => {
   const dir = getClassicNovelsDir();
   await ensureDir(dir);
 
-  const files = await fs.readdir(dir);
-  const metaFiles = files.filter(f => f.endsWith('.meta.json'));
-
+  const entries = await fs.readdir(dir, { withFileTypes: true });
   const novels = [];
-  for (const metaFile of metaFiles) {
-    const meta = await readJson(path.join(dir, metaFile));
-    if (meta) {
-      novels.push(meta);
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+
+    const metaPath = path.join(dir, entry.name, 'meta.json');
+    if (existsSync(metaPath)) {
+      const meta = await readJson(metaPath);
+      if (meta) {
+        novels.push(meta);
+      }
     }
   }
 
+  // 按序号排序
+  novels.sort((a, b) => (a.seq || 999) - (b.seq || 999));
   return novels;
+};
+
+/**
+ * 获取小说详情
+ */
+export const getNovelInfo = async (seqOrDirName) => {
+  const metaPath = await getMetaPath(seqOrDirName);
+  if (!metaPath) return null;
+  return await readJson(metaPath);
+};
+
+/**
+ * 删除小说
+ */
+export const deleteNovel = async (seqOrDirName) => {
+  const novelDir = await getNovelDir(seqOrDirName);
+  if (!novelDir) return false;
+
+  // 删除目录
+  await fs.rm(novelDir, { recursive: true, force: true });
+
+  // 从索引中删除
+  const seq = await resolveSeq(seqOrDirName);
+  if (seq) {
+    const index = await readIndex();
+    delete index.novels[seq];
+    await writeIndex(index);
+  }
+
+  logger.info(`删除小说: #${seqOrDirName}`);
+  return true;
+};
+
+/**
+ * 重建索引
+ */
+export const rebuildNovelIndex = async () => {
+  const dir = getClassicNovelsDir();
+  await ensureDir(dir);
+
+  const entries = await fs.readdir(dir, { withFileTypes: true });
+  const index = { nextSeq: 1, novels: {} };
+
+  let maxSeq = 0;
+  const needsSeq = [];
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    if (entry.name.startsWith('.')) continue;
+
+    const metaPath = path.join(dir, entry.name, 'meta.json');
+    if (existsSync(metaPath)) {
+      const meta = await readJson(metaPath);
+      if (meta) {
+        if (meta.seq && meta.seq > 0) {
+          maxSeq = Math.max(maxSeq, meta.seq);
+          index.novels[meta.seq] = {
+            dirName: entry.name,
+            title: meta.title,
+            createdAt: meta.createdAt,
+          };
+        } else {
+          needsSeq.push({ entry, meta, metaPath });
+        }
+      }
+    }
+  }
+
+  // 为没有序号的分配序号
+  let nextSeq = maxSeq + 1;
+  for (const { entry, meta, metaPath } of needsSeq) {
+    meta.seq = nextSeq;
+    await writeJson(metaPath, meta);
+    index.novels[nextSeq] = {
+      dirName: entry.name,
+      title: meta.title,
+      createdAt: meta.createdAt,
+    };
+    logger.info(`为《${meta.title}》分配序号: #${nextSeq}`);
+    nextSeq++;
+  }
+
+  index.nextSeq = nextSeq;
+  await writeIndex(index);
+
+  logger.info(`经典小说索引重建完成，共 ${Object.keys(index.novels).length} 本`);
+  return index;
 };
 
 export default {
   getClassicNovelsDir,
+  getNovelDir,
   getNovelPath,
   getMetaPath,
+  getChaptersDir,
+  getAnalysisDir,
+  createNovelDir,
   novelExists,
   checkIntegrityByScript,
-  checkIntegrityByLLM,
-  checkNovelIntegrity,
-  saveNovelMeta,
-  readNovelMeta,
+  updateNovelMeta,
+  saveChapterSplits,
   listClassicNovels,
+  getNovelInfo,
+  deleteNovel,
+  rebuildNovelIndex,
+  resolveSeq,
 };

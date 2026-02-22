@@ -32,11 +32,17 @@ import { closeBrowser } from '../scraper/browser.js';
 import { writeText, writeJson, readText, ensureDir, readJson } from '../utils/file-utils.js';
 import {
   getNovelPath,
+  getNovelDir,
   novelExists,
-  checkNovelIntegrity,
-  saveNovelMeta,
+  checkIntegrityByScript,
+  createNovelDir,
+  updateNovelMeta,
+  saveChapterSplits,
   listClassicNovels,
   getClassicNovelsDir,
+  deleteNovel,
+  rebuildNovelIndex,
+  getNovelInfo,
 } from '../scraper/classic-novels.js';
 import {
   matchReferenceNovels,
@@ -114,102 +120,100 @@ export async function downloadBook(bookId) {
     console.log(chalk.white(`  字数: ${bookInfo.wordCount}`));
     console.log();
 
-    // 检查是否已存在于 classic_novels 目录
-    const exists = await novelExists(bookInfo);
+    // 检查是否已存在（按标题）
+    const exists = await novelExists(bookInfo.title);
     if (exists) {
-      output.info('检测到已存在的文件，检查完整性...');
-
-      // 验证配置（用于LLM检查）
-      const validation = validateConfig();
-      const useLLM = validation.valid;
-
-      const checkResult = await checkNovelIntegrity(bookInfo, useLLM);
-
-      if (checkResult.valid) {
-        output.success('文件已存在且完整，跳过下载');
-        console.log();
-        console.log(chalk.cyan('文件信息:'));
-        console.log(chalk.white(`  路径: ${getNovelPath(bookInfo)}`));
-        console.log(chalk.white(`  大小: ${checkResult.scriptCheck?.stats?.fileSizeFormatted || '未知'}`));
-        console.log(chalk.white(`  章节数: ${checkResult.scriptCheck?.stats?.chapterCount || '未知'}`));
-        console.log(chalk.white(`  总字数: ${checkResult.scriptCheck?.stats?.totalWords || '未知'}`));
-
-        if (checkResult.llmCheck) {
-          console.log(chalk.white(`  LLM置信度: ${(checkResult.llmCheck.confidence * 100).toFixed(0)}%`));
-        }
-
-        return {
-          skipped: true,
-          bookInfo,
-          checkResult,
-          path: getNovelPath(bookInfo),
-        };
-      } else {
-        output.warn('文件存在但不完整，将重新下载');
-        if (checkResult.scriptCheck?.issues?.length > 0) {
-          console.log(chalk.yellow('  问题:'));
-          checkResult.scriptCheck.issues.forEach(issue => {
-            console.log(chalk.yellow(`    - ${issue}`));
-          });
-        }
-        if (checkResult.llmCheck?.issues?.length > 0) {
-          checkResult.llmCheck.issues.forEach(issue => {
-            console.log(chalk.yellow(`    - ${issue}`));
-          });
-        }
-        console.log();
-      }
+      output.success('小说已存在，跳过下载');
+      output.info('使用 classics 命令查看已下载的小说');
+      return { skipped: true, bookInfo };
     }
 
-    // 确保 classic_novels 目录存在
-    await ensureDir(getClassicNovelsDir());
+    // 创建小说目录
+    output.info('创建小说目录...');
+    const novelDir = await createNovelDir(bookInfo);
+    const seq = novelDir.seq;
 
-    // 下载文件到 classic_novels 目录
+    console.log(chalk.cyan(`  序号: #${seq}`));
+    console.log(chalk.cyan(`  目录: ${novelDir.dirName}`));
+    console.log();
+
+    // 下载文件
     output.info('下载小说文件...');
-    const savePath = getNovelPath(bookInfo);
+    const savePath = await getNovelPath(seq);
     const result = await downloadNovel(bookInfo.downloadUrl, savePath);
 
-    if (result.success) {
-      output.success(`下载完成: ${result.sizeFormatted}`);
-
-      // 检查完整性
-      output.info('检查下载文件完整性...');
-      const validation = validateConfig();
-      const useLLM = validation.valid;
-      const checkResult = await checkNovelIntegrity(bookInfo, useLLM);
-
-      // 保存元信息
-      await saveNovelMeta(bookInfo, checkResult);
-
-      if (checkResult.valid) {
-        output.success('完整性检查通过');
-      } else {
-        output.warn('完整性检查发现问题:');
-        if (checkResult.scriptCheck?.issues?.length > 0) {
-          checkResult.scriptCheck.issues.forEach(issue => {
-            console.log(chalk.yellow(`  - ${issue}`));
-          });
-        }
-      }
-
-      console.log();
-      console.log(chalk.cyan('文件信息:'));
-      console.log(chalk.white(`  路径: ${savePath}`));
-      console.log(chalk.white(`  大小: ${checkResult.scriptCheck?.stats?.fileSizeFormatted || result.sizeFormatted}`));
-      console.log(chalk.white(`  章节数: ${checkResult.scriptCheck?.stats?.chapterCount || '未知'}`));
-      console.log(chalk.white(`  总字数: ${checkResult.scriptCheck?.stats?.totalWords || '未知'}`));
-
-      return {
-        skipped: false,
-        bookInfo,
-        downloadResult: result,
-        checkResult,
-        path: savePath,
-      };
-    } else {
+    if (!result.success) {
       output.error(`下载失败: ${result.error}`);
       return null;
     }
+
+    output.success(`下载完成: ${result.sizeFormatted}`);
+
+    // 更新状态为已下载
+    await updateNovelMeta(seq, { status: 'downloaded' });
+
+    // 解析小说结构
+    output.info('解析小说结构...');
+    const novelData = await parseNovel(savePath);
+
+    console.log();
+    console.log(chalk.white(`  章节数: ${novelData.chapterCount}`));
+    console.log(chalk.white(`  总字数: ${novelData.totalWords}`));
+    console.log();
+
+    // 保存章节拆分
+    output.info('保存章节拆分...');
+    await saveChapterSplits(seq, novelData);
+
+    // 更新状态为已解析
+    await updateNovelMeta(seq, {
+      status: 'parsed',
+      chapterCount: novelData.chapterCount,
+      totalWords: novelData.totalWords,
+    });
+
+    // 分析大纲
+    output.info('分析小说大纲...');
+    const authorAgent = getAuthorAgent();
+    const outlineResult = await authorAgent.analyzeOutline(novelData);
+
+    if (outlineResult.success) {
+      const analysisDir = path.join(getClassicNovelsDir(), novelDir.dirName, 'analysis');
+      await ensureDir(analysisDir);
+      await writeText(path.join(analysisDir, 'outline-analysis.txt'), outlineResult.content);
+      output.success('大纲分析完成');
+    }
+
+    // 分析风格
+    output.info('分析写作风格...');
+    const styleResult = await authorAgent.analyzeStyle(novelData);
+
+    if (styleResult.success) {
+      const analysisDir = path.join(getClassicNovelsDir(), novelDir.dirName, 'analysis');
+      await ensureDir(analysisDir);
+      await writeText(path.join(analysisDir, 'style-analysis.txt'), styleResult.content);
+      output.success('风格分析完成');
+    }
+
+    // 更新状态为已分析
+    await updateNovelMeta(seq, { status: 'analyzed' });
+
+    console.log();
+    output.success('下载和处理完成');
+    console.log();
+    console.log(chalk.cyan('小说信息:'));
+    console.log(chalk.white(`  序号: #${seq}`));
+    console.log(chalk.white(`  书名: ${bookInfo.title}`));
+    console.log(chalk.white(`  章节数: ${novelData.chapterCount}`));
+    console.log(chalk.white(`  总字数: ${novelData.totalWords}`));
+    console.log(chalk.white(`  目录: ${novelDir.path}`));
+
+    return {
+      seq,
+      bookInfo,
+      novelData,
+      path: novelDir.path,
+    };
   } catch (error) {
     output.error(`下载失败: ${error.message}`);
     throw error;
@@ -1038,23 +1042,45 @@ export async function listClassics() {
   if (novels.length === 0) {
     output.info('暂无已下载的经典小说');
     output.info(`下载目录: ${getClassicNovelsDir()}`);
+    output.info('使用以下命令下载：');
+    console.log(chalk.gray('  node src/index.js search <书名>'));
+    console.log(chalk.gray('  node src/index.js download <book-id>'));
     return [];
   }
 
-  novels.forEach((novel, index) => {
-    const integrityIcon = novel.integrity?.valid ? chalk.green('✔') : chalk.yellow('⚠');
+  console.log(chalk.dim('序号  小说名                        作者          章节数'));
+  console.log(chalk.dim('─'.repeat(65)));
+
+  novels.forEach((novel) => {
+    const statusIcon = novel.status === 'analyzed' ? chalk.green('✔') :
+                       novel.status === 'parsed' ? chalk.blue('○') :
+                       novel.status === 'downloaded' ? chalk.yellow('◐') :
+                       chalk.gray('○');
+
+    // 格式化序号和标题
+    const seq = String(novel.seq || '?').padEnd(4);
+    const title = (novel.title || '未命名').substring(0, 18).padEnd(20);
+    const author = (novel.author || '未知').substring(0, 10).padEnd(12);
+    const chapters = novel.chapterCount ? `${novel.chapterCount}章` : '?章';
+
     console.log(
-      chalk.dim(`${index + 1}.`),
-      integrityIcon,
-      chalk.white(novel.title),
-      chalk.gray(`(${novel.author})`),
-      chalk.dim(`[${novel.integrity?.scriptCheck?.chapterCount || '?'}章]`)
+      chalk.cyan(`#${seq}`),
+      statusIcon,
+      chalk.white(title),
+      chalk.gray(author),
+      chalk.dim(chapters)
     );
   });
 
   console.log();
   output.info(`共 ${novels.length} 本经典小说`);
   output.info(`存储目录: ${getClassicNovelsDir()}`);
+  console.log();
+  output.info('状态说明:');
+  console.log(chalk.green('  ✔ 已分析'));
+  console.log(chalk.blue('  ○ 已解析'));
+  console.log(chalk.yellow('  ◐ 已下载'));
+  console.log(chalk.gray('  ○ 已创建'));
 
   return novels;
 }
@@ -1218,6 +1244,49 @@ export async function searchAndDownload(keyword, autoDownload = false) {
   }
 }
 
+/**
+ * 删除经典小说
+ */
+export async function deleteClassicNovel(seqOrDirName) {
+  output.title('删除经典小说');
+
+  const meta = await getNovelInfo(seqOrDirName);
+  if (!meta) {
+    output.error(`小说不存在: #${seqOrDirName}`);
+    return false;
+  }
+
+  console.log(chalk.white(`  序号: #${meta.seq}`));
+  console.log(chalk.white(`  书名: ${meta.title}`));
+  console.log();
+
+  const result = await deleteNovel(seqOrDirName);
+
+  if (result) {
+    output.success(`已删除: ${meta.title}`);
+  } else {
+    output.error('删除失败');
+  }
+
+  return result;
+}
+
+/**
+ * 重建经典小说索引
+ */
+export async function rebuildClassicNovelsIndex() {
+  output.title('重建经典小说索引');
+
+  const index = await rebuildNovelIndex();
+
+  output.success(`索引重建完成`);
+  console.log();
+  console.log(chalk.white(`  小说数: ${Object.keys(index.novels).length}`));
+  console.log(chalk.white(`  下一个序号: ${index.nextSeq}`));
+
+  return index;
+}
+
 export default {
   crawlRank,
   downloadBook,
@@ -1238,4 +1307,6 @@ export default {
   showHelp,
   searchBook,
   searchAndDownload,
+  deleteClassicNovel,
+  rebuildClassicNovelsIndex,
 };

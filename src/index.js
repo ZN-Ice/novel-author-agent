@@ -202,6 +202,24 @@ program
     process.exit(0);
   });
 
+// delete-classic 命令 - 删除经典小说
+program
+  .command('delete-classic <seq>')
+  .description('删除经典小说（按序号）')
+  .action(async (seq) => {
+    await commands.deleteClassicNovel(seq);
+    process.exit(0);
+  });
+
+// rebuild-classics-index 命令 - 重建经典小说索引
+program
+  .command('rebuild-classics-index')
+  .description('重建经典小说索引')
+  .action(async () => {
+    await commands.rebuildClassicNovelsIndex();
+    process.exit(0);
+  });
+
 // 错误处理
 program.exitOverride((err) => {
   if (err.code === 'commander.help' || err.code === 'commander.version' || err.code === 'commander.helpDisplayed') {
