@@ -238,6 +238,15 @@ program
     process.exit(0);
   });
 
+// download-cloud 命令 - 从阿里云盘下载数据
+program
+  .command('download-cloud')
+  .description('从阿里云盘下载数据到本地')
+  .action(async () => {
+    await commands.downloadFromCloud();
+    process.exit(0);
+  });
+
 // 错误处理
 program.exitOverride((err) => {
   if (err.code === 'commander.help' || err.code === 'commander.version' || err.code === 'commander.helpDisplayed') {

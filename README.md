@@ -209,6 +209,7 @@ novel-author-agent/
 | `chapter review <bookId> <num>` | 评价章节 |
 | `sync` | 手动同步数据到阿里云盘 |
 | `sync-status` | 查看云盘同步状态 |
+| `download-cloud` | 从阿里云盘下载数据到本地 |
 
 ## 阿里云盘同步
 
@@ -248,11 +249,22 @@ aliyunpan login
 ### 手动同步
 
 ```bash
-# 手动同步所有数据
+# 手动同步所有数据到云盘
 node src/index.js sync
+
+# 从云盘下载数据到本地（恢复数据）
+node src/index.js download-cloud
 
 # 查看同步状态
 node src/index.js sync-status
+```
+
+### 云盘目录结构
+
+```
+novel-author-agent/
+├── classic_novels/  # 经典小说
+└── workspaces/      # 工作空间
 ```
 
 > **注意**: 如果 aliyunpan CLI 工具未安装或未登录，同步会跳过但不会影响主流程。

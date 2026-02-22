@@ -52,7 +52,14 @@ import {
 import path from 'path';
 import config from '../../config/index.js';
 import { validateConfig } from '../../config/index.js';
-import { syncClassicNovels, syncWorkspaces, syncAllToCloud } from '../utils/cloud-sync.js';
+import {
+  syncClassicNovels,
+  syncWorkspaces,
+  syncAllToCloud,
+  downloadClassicNovels,
+  downloadWorkspaces,
+  downloadAllFromCloud,
+} from '../utils/cloud-sync.js';
 
 const logger = getLogger();
 
@@ -1373,6 +1380,36 @@ export async function checkSyncStatus() {
   return status;
 }
 
+/**
+ * 从阿里云盘下载数据
+ */
+export async function downloadFromCloud() {
+  output.title('从阿里云盘下载数据');
+
+  const result = await downloadAllFromCloud();
+
+  console.log();
+  console.log(chalk.cyan('下载结果:'));
+  console.log(chalk.white(`  经典小说: ${result.results.classicNovels?.success ? '成功' : '失败'}`));
+  console.log(chalk.white(`  工作空间: ${result.results.workspaces?.success ? '成功' : '失败'}`));
+
+  if (result.success) {
+    output.success('所有数据下载完成');
+    console.log();
+    output.info('数据已恢复到本地目录');
+  } else {
+    output.warn('部分数据下载失败');
+    if (!result.results.classicNovels?.success) {
+      console.log(chalk.yellow(`  经典小说失败原因: ${result.results.classicNovels?.error}`));
+    }
+    if (!result.results.workspaces?.success) {
+      console.log(chalk.yellow(`  工作空间失败原因: ${result.results.workspaces?.error}`));
+    }
+  }
+
+  return result;
+}
+
 export default {
   crawlRank,
   downloadBook,
@@ -1397,4 +1434,5 @@ export default {
   rebuildClassicNovelsIndex,
   syncToCloud,
   checkSyncStatus,
+  downloadFromCloud,
 };

@@ -192,6 +192,121 @@ export const ensureCloudDirs = async () => {
 };
 
 /**
+ * 从云盘下载目录到本地
+ * @param {string} cloudDir - 云盘目录路径
+ * @param {string} localDir - 本地目录路径
+ * @param {Object} options - 选项
+ * @returns {Promise<Object>} 下载结果
+ */
+export const downloadFromCloud = async (cloudDir, localDir, options = {}) => {
+  const { silent = false } = options;
+
+  // 检查 aliyunpan 是否可用
+  const available = await isAliyunpanAvailable();
+  if (!available) {
+    const msg = 'aliyunpan CLI 工具不可用，跳过云盘下载';
+    if (!silent) logger.warn(msg);
+    return { success: false, error: msg };
+  }
+
+  try {
+    // 使用 download 命令下载目录
+    // download <云盘文件/目录路径> <本地目录路径>
+    const command = `aliyunpan download "${cloudDir}" "${localDir}"`;
+
+    if (!silent) {
+      logger.info(`从云盘下载: ${cloudDir} -> ${localDir}`);
+    }
+
+    const { stdout, stderr } = await execAsync(command, {
+      timeout: 300000, // 5分钟超时
+      maxBuffer: 1024 * 1024 * 10, // 10MB buffer
+    });
+
+    // 检查下载结果
+    if (stderr && !stderr.includes('成功') && !stderr.includes('完成')) {
+      if (stderr.includes('失败') || stderr.includes('错误')) {
+        throw new Error(stderr);
+      }
+    }
+
+    if (!silent) {
+      logger.info(`云盘下载完成: ${path.basename(cloudDir)}`);
+    }
+
+    return { success: true, output: stdout };
+  } catch (error) {
+    const msg = `云盘下载失败: ${error.message}`;
+    if (!silent) logger.error(msg);
+    return { success: false, error: msg };
+  }
+};
+
+/**
+ * 从云盘下载经典小说目录
+ * @param {Object} options - 选项
+ * @returns {Promise<Object>} 下载结果
+ */
+export const downloadClassicNovels = async (options = {}) => {
+  // 使用相对路径避免 Git Bash 路径转换问题
+  const cloudDir = 'novel-author-agent/classic_novels';
+  const localDir = config.classicNovels.dir;
+
+  return await downloadFromCloud(cloudDir, localDir, options);
+};
+
+/**
+ * 从云盘下载工作空间目录
+ * @param {Object} options - 选项
+ * @returns {Promise<Object>} 下载结果
+ */
+export const downloadWorkspaces = async (options = {}) => {
+  // 使用相对路径避免 Git Bash 路径转换问题
+  const cloudDir = 'novel-author-agent/workspaces';
+  const localDir = config.workspace.dir;
+
+  return await downloadFromCloud(cloudDir, localDir, options);
+};
+
+/**
+ * 从云盘下载所有数据
+ * @param {Object} options - 选项
+ * @returns {Promise<Object>} 下载结果
+ */
+export const downloadAllFromCloud = async (options = {}) => {
+  const { silent = false } = options;
+  const results = {
+    classicNovels: null,
+    workspaces: null,
+  };
+
+  if (!silent) {
+    logger.info('开始从阿里云盘下载数据...');
+  }
+
+  // 下载经典小说
+  results.classicNovels = await downloadClassicNovels(options);
+
+  // 下载工作空间
+  results.workspaces = await downloadWorkspaces(options);
+
+  const success = results.classicNovels?.success && results.workspaces?.success;
+
+  if (!silent) {
+    if (success) {
+      logger.info('云盘下载完成');
+    } else {
+      logger.warn('云盘下载部分失败，请检查日志');
+    }
+  }
+
+  return {
+    success,
+    results,
+  };
+};
+
+/**
  * 检查云盘同步状态
  * @returns {Promise<Object>} 状态信息
  */

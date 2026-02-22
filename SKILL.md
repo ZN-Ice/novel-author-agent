@@ -120,6 +120,9 @@ node src/index.js sync-status
 
 # 手动同步所有数据到阿里云盘
 node src/index.js sync
+
+# 从阿里云盘下载数据到本地（恢复数据）
+node src/index.js download-cloud
 ```
 
 ## 阿里云盘同步
