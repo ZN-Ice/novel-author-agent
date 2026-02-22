@@ -1,0 +1,42 @@
+{
+  "name": "novel-author-agent",
+  "version": "1.0.0",
+  "description": "网络小说创作Agent系统 - 包含小说作者和编辑两个AI角色",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "novel": "./src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js"
+  },
+  "keywords": [
+    "novel",
+    "ai",
+    "agent",
+    "writing",
+    "glm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.6.0",
+    "chalk": "^4.1.2",
+    "cheerio": "^1.0.0",
+    "commander": "^11.0.0",
+    "dotenv": "^16.3.0",
+    "iconv-lite": "^0.6.3",
+    "puppeteer": "^21.0.0",
+    "uuid": "^9.0.0",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^4.7.1"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
