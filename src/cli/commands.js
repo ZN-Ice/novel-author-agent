@@ -7,6 +7,7 @@ import { formatFileSize } from '../utils/file-utils.js';
 import { getRankPage, getRankList, getTopBooks } from '../scraper/rank-list.js';
 import { getBookInfo } from '../scraper/book-page.js';
 import { downloadNovel } from '../scraper/downloader.js';
+import { searchNovels, searchWithOptions } from '../scraper/search.js';
 import { parseNovel, extractSample } from '../parser/novel-parser.js';
 import {
   createWorkspace,
@@ -774,6 +775,8 @@ ${chalk.yellow('命令:')}
   crawl [page]               爬取排行榜（默认第1页）
   download <book-id>         下载指定书籍到 classic_novels 目录
   download-top <n>           下载排行榜前N本书
+  search <keyword>           按书名搜索小说
+  search-download <keyword>  搜索并下载小说（精确匹配时自动下载）
   classics                   列出已下载的经典小说
   list                       列出所有工作目录中的书籍
   info <book-id>             查看书籍详情
@@ -793,6 +796,8 @@ ${chalk.yellow('选项:')}
 
 ${chalk.yellow('示例:')}
   node src/index.js crawl 1
+  node src/index.js search 序列
+  node src/index.js search-download 第一序列
   node src/index.js download 6174
   node src/index.js classics
   node src/index.js analyze uuid-xxx
@@ -833,6 +838,165 @@ export async function listClassics() {
   return novels;
 }
 
+/**
+ * 搜索小说
+ */
+export async function searchBook(keyword) {
+  output.title(`搜索小说: "${keyword}"`);
+
+  try {
+    const result = await searchWithOptions(keyword);
+
+    if (!result.found) {
+      output.warn(`未找到与 "${keyword}" 相关的小说`);
+      console.log();
+      output.info('建议：');
+      output.info('  1. 检查书名是否正确');
+      output.info('  2. 尝试使用更简短的关键词');
+      output.info('  3. 使用部分书名进行搜索');
+      return { found: false, results: [] };
+    }
+
+    output.success(`找到 ${result.count} 个结果`);
+    console.log();
+
+    result.results.forEach((book, index) => {
+      const exactBadge = book.title === keyword ? chalk.green(' [精确匹配]') : '';
+      console.log(
+        chalk.dim(`${index + 1}.`),
+        chalk.white(book.title),
+        chalk.gray(`(${book.author || '未知作者'})`),
+        chalk.dim(`[${book.id}]`),
+        exactBadge
+      );
+    });
+
+    console.log();
+
+    if (result.hasMultiple && !result.hasExactMatch) {
+      output.info('找到多个匹配结果，请使用完整的书籍ID下载：');
+      console.log();
+      result.results.forEach((book, index) => {
+        console.log(chalk.gray(`  node src/index.js download ${book.id}  # ${book.title}`));
+      });
+    } else if (result.hasExactMatch) {
+      const exactBook = result.results.find(b => b.title === keyword);
+      if (exactBook) {
+        output.info(`找到精确匹配，可以直接下载：`);
+        console.log();
+        console.log(chalk.gray(`  node src/index.js download ${exactBook.id}`));
+      }
+    }
+
+    return result;
+  } catch (error) {
+    output.error(`搜索失败: ${error.message}`);
+    throw error;
+  } finally {
+    await closeBrowser();
+  }
+}
+
+/**
+ * 搜索并下载小说
+ * 如果找到精确匹配则直接下载，否则显示所有选项
+ */
+export async function searchAndDownload(keyword, autoDownload = false) {
+  output.title(`搜索并下载: "${keyword}"`);
+
+  try {
+    const result = await searchWithOptions(keyword);
+
+    if (!result.found) {
+      output.warn(`未找到与 "${keyword}" 相关的小说`);
+      return { found: false, downloaded: false, results: [] };
+    }
+
+    output.success(`找到 ${result.count} 个结果`);
+    console.log();
+
+    // 显示所有结果
+    result.results.forEach((book, index) => {
+      const exactBadge = book.title === keyword ? chalk.green(' [精确匹配]') :
+                         book.title.startsWith(keyword + '（') || book.title.startsWith(keyword + '(') ?
+                         chalk.green(' [精确匹配]') :
+                         book.title.includes(keyword) ? chalk.cyan(' [包含关键词]') : '';
+      console.log(
+        chalk.dim(`${index + 1}.`),
+        chalk.white(book.title),
+        chalk.gray(`(${book.author || '未知作者'})`),
+        chalk.dim(`[${book.id}]`),
+        exactBadge
+      );
+    });
+
+    console.log();
+
+    // 查找最佳匹配（精确匹配或以关键词开头）
+    const findBestMatch = () => {
+      // 优先查找完全相等
+      let match = result.results.find(b => b.title === keyword);
+      if (match) return match;
+
+      // 查找以关键词+括号开头的（如 "第一序列（校对版全本）"）
+      match = result.results.find(b =>
+        b.title.startsWith(keyword + '（') || b.title.startsWith(keyword + '(')
+      );
+      if (match) return match;
+
+      // 查找包含关键词的
+      match = result.results.find(b => b.title.includes(keyword));
+      return match;
+    };
+
+    // 如果有精确匹配且启用自动下载，直接下载
+    if (autoDownload && result.hasExactMatch) {
+      const exactBook = findBestMatch();
+      if (exactBook) {
+        output.info(`找到精确匹配，开始下载: ${exactBook.title}`);
+        console.log();
+        // 注意：这里不调用 closeBrowser，因为 downloadBook 会处理
+        const downloadResult = await downloadBook(exactBook.id);
+        return {
+          found: true,
+          downloaded: !!downloadResult,
+          autoDownloaded: true,
+          selectedBook: exactBook,
+          downloadResult,
+          allResults: result.results,
+        };
+      }
+    }
+
+    // 如果只有一个结果，提示可以下载
+    if (result.count === 1) {
+      const book = result.results[0];
+      output.info(`只有一个结果，可以下载：`);
+      console.log();
+      console.log(chalk.gray(`  node src/index.js download ${book.id}`));
+    } else {
+      output.info('找到多个结果，请选择要下载的书籍ID：');
+      console.log();
+      result.results.forEach((book, index) => {
+        console.log(chalk.gray(`  node src/index.js download ${book.id}  # ${index + 1}. ${book.title}`));
+      });
+    }
+
+    return {
+      found: true,
+      downloaded: false,
+      autoDownloaded: false,
+      allResults: result.results,
+    };
+  } catch (error) {
+    output.error(`搜索下载失败: ${error.message}`);
+    throw error;
+  } finally {
+    // 只有在没有自动下载的情况下才关闭浏览器
+    // 如果自动下载，downloadBook 会处理关闭
+  }
+}
+
 export default {
   crawlRank,
   downloadBook,
@@ -849,4 +1013,6 @@ export default {
   reviewChapter,
   cleanBook,
   showHelp,
+  searchBook,
+  searchAndDownload,
 };

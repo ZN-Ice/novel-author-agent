@@ -52,6 +52,25 @@ program
     process.exit(0);
   });
 
+// search 命令 - 搜索小说
+program
+  .command('search <keyword>')
+  .description('按书名搜索小说')
+  .action(async (keyword) => {
+    await commands.searchBook(keyword);
+    process.exit(0);
+  });
+
+// search-download 命令 - 搜索并下载小说
+program
+  .command('search-download <keyword>')
+  .description('搜索并下载小说（精确匹配时自动下载）')
+  .option('--auto', '自动下载精确匹配的结果')
+  .action(async (keyword, options) => {
+    await commands.searchAndDownload(keyword, options.auto);
+    process.exit(0);
+  });
+
 // classics 命令 - 列出已下载的经典小说
 program
   .command('classics')

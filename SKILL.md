@@ -24,6 +24,13 @@ GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
 # 爬取排行榜（第1页）
 node src/index.js crawl 1
 
+# 搜索小说（按书名或关键词）
+node src/index.js search 序列
+node src/index.js search 第一序列
+
+# 搜索并下载（精确匹配时自动下载）
+node src/index.js search-download 第一序列 --auto
+
 # 下载指定书籍（通过书籍ID）
 node src/index.js download 6174
 
@@ -34,7 +41,10 @@ node src/index.js download-top 5
 ### 书籍管理
 
 ```bash
-# 列出所有书籍
+# 列出已下载的经典小说
+node src/index.js classics
+
+# 列出所有工作目录中的书籍
 node src/index.js list
 
 # 查看书籍详情
@@ -76,6 +86,14 @@ node src/index.js chapter review <book-id> 1
 
 ## 典型工作流程
 
+### 搜索和下载小说
+
+```
+1. node src/index.js search 第一序列    # 搜索小说
+2. node src/index.js search-download 第一序列 --auto  # 搜索并自动下载
+3. node src/index.js classics           # 查看已下载的经典小说
+```
+
 ### 学习已有小说
 
 ```
@@ -107,15 +125,19 @@ node src/index.js chapter review <book-id> 1
 ## 目录结构
 
 ```
-books/{book-id}/
-├── source.txt        # 原始文本（下载的）
-├── analysis.json     # 分析结果（大纲、风格）
-├── outline.md        # 创作的大纲
+classic_novels/           # 下载的经典小说存储目录
+├── 小说名.txt           # 小说原文
+└── 小说名.meta.json     # 元信息（完整性检查等）
+
+workspaces/{book-id}/     # 创作工作目录
+├── source.txt            # 原始文本
+├── analysis.json         # 分析结果（大纲、风格）
+├── outline.md            # 创作的大纲
 ├── chapters/
-│   ├── 001.md        # 第一章
-│   └── 002.md        # 第二章
+│   ├── 001.md            # 第一章
+│   └── 002.md            # 第二章
 └── reviews/
-    ├── outline.json  # 大纲评价
+    ├── outline.json      # 大纲评价
     └── chapter_001.json  # 章节评价
 ```
 
