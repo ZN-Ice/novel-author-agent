@@ -22,107 +22,107 @@ GLM_BASE_URL=https://open.bigmodel.cn/api/coding/paas/v4
 
 ```bash
 # 爬取排行榜（第1页）
-node src/index.js crawl 1
+cd SKILL.md所在文件夹 && node src/index.js crawl 1
 
 # 搜索小说（按书名或关键词）
-node src/index.js search 诡秘之主
-node src/index.js search 第一序列
+cd SKILL.md所在文件夹 && node src/index.js search 诡秘之主
+cd SKILL.md所在文件夹 && node src/index.js search 第一序列
 
 # 搜索并下载（精确匹配时自动下载）
-node src/index.js search-download 第一序列 --auto
+cd SKILL.md所在文件夹 && node src/index.js search-download 第一序列 --auto
 
 # 下载指定书籍（通过书籍ID，自动完成章节拆分和大纲分析）
-node src/index.js download 6174
+cd SKILL.md所在文件夹 && node src/index.js download 6174
 
 # 下载排行榜前5本书
-node src/index.js download-top 5
+cd SKILL.md所在文件夹 && node src/index.js download-top 5
 ```
 
 ### 经典小说管理
 
 ```bash
 # 列出已下载的经典小说（显示序号、状态、章节数）
-node src/index.js classics
+cd SKILL.md所在文件夹 && node src/index.js classics
 
 # 删除经典小说（按序号）
-node src/index.js delete-classic 1
+cd SKILL.md所在文件夹 && node src/index.js delete-classic 1
 
 # 重建经典小说索引
-node src/index.js rebuild-classics-index
+cd SKILL.md所在文件夹 && node src/index.js rebuild-classics-index
 ```
 
 ### 工作空间管理
 
 ```bash
 # 列出所有工作空间（显示序号、小说名、状态）
-node src/index.js list
+cd SKILL.md所在文件夹 && node src/index.js list
 
 # 查看书籍详情（使用序号）
-node src/index.js info 1
+cd SKILL.md所在文件夹 && node src/index.js info 1
 
 # 查看进展记录
-node src/index.js progress 1
+cd SKILL.md所在文件夹 && node src/index.js progress 1
 
 # 删除工作空间（按序号）
-node src/index.js clean 1
+cd SKILL.md所在文件夹 && node src/index.js clean 1
 
 # 重建工作空间索引
-node src/index.js rebuild-index
+cd SKILL.md所在文件夹 && node src/index.js rebuild-index
 ```
 
 ### 小说分析（需要 GLM API Key）
 
 ```bash
 # 分析已下载的小说（大纲+风格）
-node src/index.js analyze <book-id>
+cd SKILL.md所在文件夹 && node src/index.js analyze <book-id>
 ```
 
 ### 智能大纲创作（推荐）
 
 ```bash
 # 输入描述，自动匹配参考小说并创作大纲
-node src/index.js outline smart "我想写一本玄幻小说"
-node src/index.js outline smart "无限流，主角进入各种副本" --title 我的小说
-node src/index.js outline smart "都市异能，主角觉醒超能力"
+cd SKILL.md所在文件夹 && node src/index.js outline smart "我想写一本玄幻小说"
+cd SKILL.md所在文件夹 && node src/index.js outline smart "无限流，主角进入各种副本" --title 我的小说
+cd SKILL.md所在文件夹 && node src/index.js outline smart "都市异能，主角觉醒超能力"
 
 # 禁止自动下载参考小说
-node src/index.js outline smart "玄幻小说" --no-auto-download
+cd SKILL.md所在文件夹 && node src/index.js outline smart "玄幻小说" --no-auto-download
 ```
 
 ### 传统大纲创作流程
 
 ```bash
 # 创作大纲 - 需要先有工作空间
-node src/index.js outline create <book-id> --genre 玄幻 --theme "主题描述"
+cd SKILL.md所在文件夹 && node src/index.js outline create <book-id> --genre 玄幻 --theme "主题描述"
 
 # 评价大纲（编辑给出评分和改进建议）
-node src/index.js outline review <book-id>
+cd SKILL.md所在文件夹 && node src/index.js outline review <book-id>
 
 # 优化大纲
-node src/index.js outline optimize <book-id>
+cd SKILL.md所在文件夹 && node src/index.js outline optimize <book-id>
 ```
 
 ### 章节创作流程
 
 ```bash
 # 创作章节
-node src/index.js chapter write <book-id> 1
+cd SKILL.md所在文件夹 && node src/index.js chapter write <book-id> 1
 
 # 评价章节
-node src/index.js chapter review <book-id> 1
+cd SKILL.md所在文件夹 && node src/index.js chapter review <book-id> 1
 ```
 
 ### 云盘同步
 
 ```bash
 # 查看云盘同步状态
-node src/index.js sync-status
+cd SKILL.md所在文件夹 && node src/index.js sync-status
 
 # 手动同步所有数据到阿里云盘
-node src/index.js sync
+cd SKILL.md所在文件夹 && node src/index.js sync
 
 # 从阿里云盘下载数据到本地（恢复数据）
-node src/index.js download-cloud
+cd SKILL.md所在文件夹 && node src/index.js download-cloud
 ```
 
 ## 阿里云盘同步
@@ -154,28 +154,28 @@ aliyunpan login
 ### 推荐流程：智能大纲创作
 
 ```
-1. node src/index.js search-download 诡秘之主 --auto  # 下载参考小说
-2. node src/index.js outline smart "我想写一本克苏鲁风格的玄幻小说" --title 我的小说
-3. node src/index.js outline review 1                  # 评价大纲
-4. node src/index.js outline optimize 1                # 优化大纲
-5. node src/index.js chapter write 1 1                 # 创作第一章
-6. node src/index.js chapter review 1 1                # 评价第一章
+1. cd SKILL.md所在文件夹 && node src/index.js search-download 诡秘之主 --auto  # 下载参考小说
+2. cd SKILL.md所在文件夹 && node src/index.js outline smart "我想写一本克苏鲁风格的玄幻小说" --title 我的小说
+3. cd SKILL.md所在文件夹 && node src/index.js outline review 1                  # 评价大纲
+4. cd SKILL.md所在文件夹 && node src/index.js outline optimize 1                # 优化大纲
+5. cd SKILL.md所在文件夹 && node src/index.js chapter write 1 1                 # 创作第一章
+6. cd SKILL.md所在文件夹 && node src/index.js chapter review 1 1                # 评价第一章
 ```
 
 ### 搜索和下载小说
 
 ```
-1. node src/index.js search 第一序列    # 搜索小说
-2. node src/index.js search-download 第一序列 --auto  # 搜索并自动下载
-3. node src/index.js classics           # 查看已下载的经典小说
+1. cd SKILL.md所在文件夹 && node src/index.js search 第一序列    # 搜索小说
+2. cd SKILL.md所在文件夹 && node src/index.js search-download 第一序列 --auto  # 搜索并自动下载
+3. cd SKILL.md所在文件夹 && node src/index.js classics           # 查看已下载的经典小说
 ```
 
 ### 学习已有小说
 
 ```
-1. node src/index.js crawl 1           # 查看排行榜
-2. node src/index.js download 6174     # 下载感兴趣的书籍
-3. node src/index.js classics          # 查看下载结果
+1. cd SKILL.md所在文件夹 && node src/index.js crawl 1           # 查看排行榜
+2. cd SKILL.md所在文件夹 && node src/index.js download 6174     # 下载感兴趣的书籍
+3. cd SKILL.md所在文件夹 && node src/index.js classics          # 查看下载结果
 ```
 
 ## 序号系统
@@ -187,9 +187,9 @@ aliyunpan login
 
 ```bash
 # 使用序号操作
-node src/index.js info 1              # 查看序号为1的工作空间
-node src/index.js delete-classic 1    # 删除序号为1的经典小说
-node src/index.js clean 1             # 删除序号为1的工作空间
+cd SKILL.md所在文件夹 && node src/index.js info 1              # 查看序号为1的工作空间
+cd SKILL.md所在文件夹 && node src/index.js delete-classic 1    # 删除序号为1的经典小说
+cd SKILL.md所在文件夹 && node src/index.js clean 1             # 删除序号为1的工作空间
 ```
 
 ## 两个AI角色
@@ -265,14 +265,14 @@ A: 大文件（>10MB）需要较长时间，系统已设置10分钟超时。如�
 ### Q: 如何查看创作进展？
 A: 使用 `progress` 命令：
 ```bash
-node src/index.js progress <序号>
+cd SKILL.md所在文件夹 && node src/index.js progress <序号>
 ```
 
 ### Q: 序号显示为"?"怎么办？
 A: 运行重建索引命令：
 ```bash
-node src/index.js rebuild-index        # 重建工作空间索引
-node src/index.js rebuild-classics-index  # 重建经典小说索引
+cd SKILL.md所在文件夹 && node src/index.js rebuild-index        # 重建工作空间索引
+cd SKILL.md所在文件夹 && node src/index.js rebuild-classics-index  # 重建经典小说索引
 ```
 
 ## 注意事项

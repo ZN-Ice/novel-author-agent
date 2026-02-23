@@ -11,7 +11,9 @@
       "Bash(git commit:*)",
       "Bash(DEBUG=1 node:*)",
       "Bash(tail:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(aliyunpan:*)",
+      "Bash(git checkout:*)"
     ]
   }
 }
