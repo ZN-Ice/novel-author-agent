@@ -128,6 +128,7 @@ const cloneRepo = async (tempDir) => {
         `git clone --depth 1 --branch ${branch} "${repo}" "${tempDir}"`,
         {
           timeout: 300000, // 5分钟超时
+          maxBuffer: 100 * 1024 * 1024, // 100MB
           env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
         }
       );
@@ -145,6 +146,7 @@ const cloneRepo = async (tempDir) => {
           `git clone --depth 1 "${repo}" "${cloneDir}"`,
           {
             timeout: 300000,
+            maxBuffer: 100 * 1024 * 1024, // 100MB
             env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
           }
         );
@@ -196,6 +198,7 @@ const pullRepo = async (repoDir) => {
       {
         cwd: repoDir,
         timeout: 60000,
+        maxBuffer: 100 * 1024 * 1024, // 100MB
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
       }
     );
@@ -217,10 +220,11 @@ const commitAndPush = async (repoDir, message, isNewBranch = false) => {
   try {
     logger.debug('提交更改...');
 
-    // 检查是否有更改
+    // 检查是否有更改 - 增加缓冲区以支持大量文件
     const { stdout: statusOutput } = await execAsync('git status --porcelain', {
       cwd: repoDir,
       timeout: 10000,
+      maxBuffer: 100 * 1024 * 1024, // 100MB
     });
 
     if (!statusOutput.trim()) {
@@ -228,16 +232,18 @@ const commitAndPush = async (repoDir, message, isNewBranch = false) => {
       return { success: true, nothingToCommit: true };
     }
 
-    // 添加所有更改
+    // 添加所有更改 - 增加缓冲区以支持大量文件（最多20W个文件）
     await execAsync('git add .', {
       cwd: repoDir,
       timeout: 300000,
+      maxBuffer: 100 * 1024 * 1024, // 100MB
     });
 
-    // 提交
+    // 提交 - 增加缓冲区以支持大量文件的提交信息
     await execAsync(`git commit -m "${message}"`, {
       cwd: repoDir,
       timeout: 300000,
+      maxBuffer: 100 * 1024 * 1024, // 100MB
     });
 
     logger.debug('推送到远程...');
@@ -249,7 +255,8 @@ const commitAndPush = async (repoDir, message, isNewBranch = false) => {
 
     const { stdout, stderr } = await execAsync(pushCommand, {
       cwd: repoDir,
-      timeout: 120000,
+      timeout: 300000,
+      maxBuffer: 100 * 1024 * 1024, // 100MB
       env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
     });
 
