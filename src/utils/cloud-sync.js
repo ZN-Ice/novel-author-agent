@@ -344,6 +344,9 @@ const commitAndPush = async (repoDir, message, isNewBranch = false) => {
 
     logger.debug('推送到远程...');
 
+    // 配置 Git 以优化大文件推送
+    await configureGitForLargeFiles(repoDir);
+
     // 推送 - 新分支使用 -u 参数设置上游
     const pushCommand = isNewBranch
       ? `git push -u origin ${config.githubBackup.branch}`
@@ -378,6 +381,44 @@ const configureGitUser = async (repoDir) => {
     });
   } catch (error) {
     logger.warn(`配置 git 用户信息失败: ${error.message}`);
+  }
+};
+
+/**
+ * 配置 Git 以处理大文件和低内存环境
+ * @param {string} repoDir - 仓库目录
+ */
+const configureGitForLargeFiles = async (repoDir) => {
+  try {
+    // 增加 HTTP 缓冲区大小 (500MB)
+    await execAsync('git config http.postBuffer 524288000', {
+      cwd: repoDir,
+      timeout: 5000,
+    });
+
+    // 降低内存使用，适用于低内存环境
+    await execAsync('git config pack.windowMemory 50m', {
+      cwd: repoDir,
+      timeout: 5000,
+    });
+    await execAsync('git config pack.packSizeLimit 100m', {
+      cwd: repoDir,
+      timeout: 5000,
+    });
+    await execAsync('git config pack.deltaCacheSize 10m', {
+      cwd: repoDir,
+      timeout: 5000,
+    });
+
+    // 使用浅克隆减少内存使用
+    await execAsync('git config core.depth 1', {
+      cwd: repoDir,
+      timeout: 5000,
+    });
+
+    logger.debug('已配置 Git 以优化大文件传输');
+  } catch (error) {
+    logger.warn(`配置 Git 大文件优化失败: ${error.message}`);
   }
 };
 
@@ -425,6 +466,9 @@ export const syncToGitHub = async (localDir, remoteDirName, options = {}) => {
 
     // 配置 git 用户信息
     await configureGitUser(tempDir);
+
+    // 配置 Git 以处理大文件
+    await configureGitForLargeFiles(tempDir);
 
     // 拉取最新代码
     await pullRepo(tempDir);
@@ -529,6 +573,9 @@ export const syncClassicNovels = async (options = {}) => {
 
     // 配置 git 用户信息
     await configureGitUser(tempDir);
+
+    // 配置 Git 以处理大文件
+    await configureGitForLargeFiles(tempDir);
 
     // 拉取最新代码
     await pullRepo(tempDir);
