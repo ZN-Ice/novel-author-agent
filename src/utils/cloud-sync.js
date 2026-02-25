@@ -231,13 +231,13 @@ const commitAndPush = async (repoDir, message, isNewBranch = false) => {
     // 添加所有更改
     await execAsync('git add .', {
       cwd: repoDir,
-      timeout: 30000,
+      timeout: 300000,
     });
 
     // 提交
     await execAsync(`git commit -m "${message}"`, {
       cwd: repoDir,
-      timeout: 30000,
+      timeout: 300000,
     });
 
     logger.debug('推送到远程...');
