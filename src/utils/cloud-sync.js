@@ -111,6 +111,55 @@ const copyDir = async (srcPath, destPath) => {
 };
 
 /**
+ * 使用 tar 压缩目录
+ * @param {string} srcPath - 源目录路径
+ * @param {string} destPath - 目标 tar 文件路径
+ */
+const compressDir = async (srcPath, destPath) => {
+  try {
+    // 使用 tar 压缩，Windows 10 1803+ 支持 tar 命令
+    // -c: 创建归档
+    // -f: 指定文件名
+    // -C: 切换到指定目录
+    // *: 压缩所有内容（不包含顶层目录本身）
+    const destDir = path.dirname(destPath);
+    const destFile = path.basename(destPath);
+    const srcDir = path.basename(srcPath);
+
+    await execAsync(
+      `tar -cf "${destFile}" -C "${path.dirname(srcPath)}" "${srcDir}"`,
+      {
+        cwd: destDir,
+        timeout: 600000, // 10分钟超时，压缩可能需要较长时间
+        maxBuffer: 100 * 1024 * 1024, // 100MB
+      }
+    );
+  } catch (error) {
+    throw new Error(`压缩目录失败: ${error.message}`);
+  }
+};
+
+/**
+ * 解压 tar 文件
+ * @param {string} tarPath - tar 文件路径
+ * @param {string} destPath - 目标目录路径
+ */
+const extractTar = async (tarPath, destPath) => {
+  try {
+    // 使用 tar 解压
+    // -x: 提取归档
+    // -f: 指定文件名
+    // -C: 切换到目标目录
+    await execAsync(`tar -xf "${tarPath}" -C "${destPath}"`, {
+      timeout: 600000, // 10分钟超时
+      maxBuffer: 100 * 1024 * 1024, // 100MB
+    });
+  } catch (error) {
+    throw new Error(`解压文件失败: ${error.message}`);
+  }
+};
+
+/**
  * 克隆 GitHub 仓库到临时目录
  * @param {string} tempDir - 临时目录路径
  * @returns {Promise<Object>} 克隆结果
@@ -377,15 +426,95 @@ export const syncToGitHub = async (localDir, remoteDirName, options = {}) => {
 };
 
 /**
- * 同步经典小说目录到 GitHub
+ * 同步经典小说目录到 GitHub（使用 tar 压缩）
  * @param {Object} options - 选项
  * @returns {Promise<Object>} 同步结果
  */
 export const syncClassicNovels = async (options = {}) => {
+  const { silent = false } = options;
   const localDir = config.classicNovels.dir;
   const remoteDirName = config.githubBackup.classicNovelsDir;
+  const timestamp = Date.now();
+  const tempDir = path.join(TEMP_BASE, `sync-${timestamp}`);
+  const remoteDir = path.join(tempDir, remoteDirName);
 
-  return await syncToGitHub(localDir, remoteDirName, options);
+  try {
+    // 检查 git 是否可用
+    const gitAvailable = await isGitAvailable();
+    if (!gitAvailable) {
+      const msg = 'git 不可用，跳过 GitHub 同步';
+      if (!silent) logger.warn(msg);
+      return { success: false, error: msg };
+    }
+
+    // 检查 GitHub 配置
+    if (!isGitHubConfigured()) {
+      const msg = 'GitHub 备份配置不完整，请检查 GITHUB_BACKUP_REPO 和 GITHUB_BACKUP_BRANCH';
+      if (!silent) logger.warn(msg);
+      return { success: false, error: msg };
+    }
+
+    if (!silent) {
+      logger.info(`同步到 GitHub: ${path.basename(localDir)} -> ${remoteDirName}/ (压缩模式)`);
+    }
+
+    // 创建临时目录
+    await createDir(tempDir);
+
+    // 克隆仓库
+    const cloneResult = await cloneRepo(tempDir);
+    if (!cloneResult.success) {
+      throw new Error(`克隆仓库失败: ${cloneResult.error}`);
+    }
+
+    // 配置 git 用户信息
+    await configureGitUser(tempDir);
+
+    // 拉取最新代码
+    await pullRepo(tempDir);
+
+    // 删除远程目录（如果存在）
+    await deleteDir(remoteDir);
+
+    // 创建远程目录
+    await createDir(remoteDir);
+
+    // 使用 tar 压缩
+    const tarFile = path.join(remoteDir, 'classic_novels.tar');
+    if (!silent) {
+      logger.debug(`压缩文件: ${localDir} -> ${tarFile}`);
+    }
+    await compressDir(localDir, tarFile);
+
+    // 提交并推送
+    const timeString = new Date().toISOString();
+    const commitResult = await commitAndPush(
+      tempDir,
+      `chore: 同步 ${remoteDirName} (压缩) - ${timeString}`,
+      cloneResult.createdBranch
+    );
+
+    if (!commitResult.success) {
+      throw new Error(`提交推送失败: ${commitResult.error}`);
+    }
+
+    if (!silent) {
+      if (commitResult.nothingToCommit) {
+        logger.info(`GitHub 同步完成 (无变更)`);
+      } else {
+        logger.info(`GitHub 同步完成: ${path.basename(localDir)} (已压缩)`);
+      }
+    }
+
+    return { success: true, nothingToCommit: commitResult.nothingToCommit };
+  } catch (error) {
+    const msg = `GitHub 同步失败: ${error.message}`;
+    if (!silent) logger.error(msg);
+    return { success: false, error: msg };
+  } finally {
+    // 清理临时目录
+    await deleteDir(tempDir);
+  }
 };
 
 /**
@@ -523,15 +652,89 @@ export const downloadFromGitHub = async (remoteDirName, localDir, options = {}) 
 };
 
 /**
- * 从 GitHub 下载经典小说目录
+ * 从 GitHub 下载经典小说目录（使用 tar 解压）
  * @param {Object} options - 选项
  * @returns {Promise<Object>} 下载结果
  */
 export const downloadClassicNovels = async (options = {}) => {
+  const { silent = false } = options;
   const remoteDirName = config.githubBackup.classicNovelsDir;
   const localDir = config.classicNovels.dir;
+  const timestamp = Date.now();
+  const tempDir = path.join(TEMP_BASE, `download-${timestamp}`);
+  const remoteDir = path.join(tempDir, remoteDirName);
+  const tarFile = path.join(remoteDir, 'classic_novels.tar');
 
-  return await downloadFromGitHub(remoteDirName, localDir, options);
+  try {
+    // 检查 git 是否可用
+    const gitAvailable = await isGitAvailable();
+    if (!gitAvailable) {
+      const msg = 'git 不可用，跳过 GitHub 下载';
+      if (!silent) logger.warn(msg);
+      return { success: false, error: msg };
+    }
+
+    // 检查 GitHub 配置
+    if (!isGitHubConfigured()) {
+      const msg = 'GitHub 备份配置不完整，请检查 GITHUB_BACKUP_REPO 和 GITHUB_BACKUP_BRANCH';
+      if (!silent) logger.warn(msg);
+      return { success: false, error: msg };
+    }
+
+    if (!silent) {
+      logger.info(`从 GitHub 下载: ${remoteDirName}/ -> ${localDir} (解压模式)`);
+    }
+
+    // 创建临时目录
+    await createDir(tempDir);
+
+    // 克隆仓库
+    const cloneResult = await cloneRepo(tempDir);
+    if (!cloneResult.success) {
+      throw new Error(`克隆仓库失败: ${cloneResult.error}`);
+    }
+
+    // 检查 tar 文件是否存在
+    const checkResult = await execAsync(`if exist "${tarFile}" (echo exists) else (echo not_exists)`, {
+      shell: 'cmd.exe',
+      timeout: 5000,
+    });
+
+    if (!checkResult.stdout.includes('exists')) {
+      const msg = `备份文件不存在: ${remoteDirName}/classic_novels.tar`;
+      if (!silent) logger.warn(msg);
+      return { success: false, error: msg };
+    }
+
+    // 确保本地目录的父目录存在
+    const localParentDir = path.dirname(localDir);
+    await createDir(localParentDir);
+
+    // 删除本地目录（如果存在）
+    await deleteDir(localDir);
+
+    // 创建本地目录
+    await createDir(localDir);
+
+    // 解压 tar 文件到本地目录
+    if (!silent) {
+      logger.debug(`解压文件: ${tarFile} -> ${localDir}`);
+    }
+    await extractTar(tarFile, localDir);
+
+    if (!silent) {
+      logger.info(`GitHub 下载完成: ${remoteDirName} (已解压)`);
+    }
+
+    return { success: true };
+  } catch (error) {
+    const msg = `GitHub 下载失败: ${error.message}`;
+    if (!silent) logger.error(msg);
+    return { success: false, error: msg };
+  } finally {
+    // 清理临时目录
+    await deleteDir(tempDir);
+  }
 };
 
 /**
