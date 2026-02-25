@@ -7,9 +7,12 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import path from 'path';
 import { tmpdir } from 'os';
+import fs from 'fs';
+import { existsSync } from 'fs';
 import getLogger from './logger.js';
 import config from '../../config/index.js';
-import { listClassicNovels, rebuildNovelIndex } from '../scraper/classic-novels.js';
+import { rebuildNovelIndex } from '../scraper/classic-novels.js';
+import { readJson } from './file-utils.js';
 
 const execAsync = promisify(exec);
 const logger = getLogger();
@@ -119,18 +122,17 @@ const copyDir = async (srcPath, destPath) => {
  */
 const listFiles = async (dirPath, pattern = '*') => {
   try {
-    if (process.platform === 'win32') {
-      const { stdout } = await execAsync(`dir /b "${dirPath}\\${pattern}"`, {
-        shell: 'cmd.exe',
-        timeout: 10000,
-      });
-      return stdout.trim().split('\n').filter(Boolean);
-    } else {
-      const { stdout } = await execAsync(`ls -1 "${dirPath}/${pattern}"`, {
-        timeout: 10000,
-      });
-      return stdout.trim().split('\n').filter(Boolean);
+    const entries = await fs.promises.readdir(dirPath, { withFileTypes: true });
+    const files = entries
+      .filter(entry => entry.isFile())
+      .map(entry => entry.name);
+
+    // 如果有模式过滤，则应用过滤
+    if (pattern !== '*') {
+      const regex = new RegExp('^' + pattern.replace(/\*/g, '.*').replace(/\?/g, '.') + '$');
+      return files.filter(file => regex.test(file));
     }
+    return files;
   } catch (error) {
     return [];
   }
@@ -172,11 +174,30 @@ const compressDir = async (srcPath, destPath) => {
  */
 const extractTar = async (tarPath, destPath) => {
   try {
+    // 先检查文件是否存在
+    if (!existsSync(tarPath)) {
+      throw new Error(`tar 文件不存在: ${tarPath}`);
+    }
+
+    // Windows 上的 tar 需要 Unix 风格路径
+    // 例如: C:\Users\... -> /c/Users/...
+    let tarPathUnix = tarPath;
+    let destPathUnix = destPath;
+
+    if (process.platform === 'win32') {
+      // 转换 Windows 路径为 Git Bash 风格路径
+      // C:\Users\... -> /c/Users/... (小写驱动器字母)
+      tarPathUnix = tarPath.replace(/^([A-Z]):\\/, (match, drive) => `/${drive.toLowerCase()}/`).replace(/\\/g, '/');
+      destPathUnix = destPath.replace(/^([A-Z]):\\/, (match, drive) => `/${drive.toLowerCase()}/`).replace(/\\/g, '/');
+    }
+
+    logger.debug(`解压: ${tarPathUnix} -> ${destPathUnix}`);
+
     // 使用 tar 解压
     // -x: 提取归档
     // -f: 指定文件名
     // -C: 切换到目标目录
-    await execAsync(`tar -xf "${tarPath}" -C "${destPath}"`, {
+    await execAsync(`tar -xf "${tarPathUnix}" -C "${destPathUnix}"`, {
       timeout: 600000, // 10分钟超时
       maxBuffer: 100 * 1024 * 1024, // 100MB
     });
@@ -480,11 +501,21 @@ export const syncClassicNovels = async (options = {}) => {
       return { success: false, error: msg };
     }
 
-    // 获取小说列表
-    const novels = await listClassicNovels();
+    // 遍历目录获取小说列表
+    const entries = await fs.promises.readdir(localDir, { withFileTypes: true });
+    const novelDirs = [];
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith('.')) continue;
+      // 检查是否有 meta.json
+      const metaPath = path.join(localDir, entry.name, 'meta.json');
+      if (existsSync(metaPath)) {
+        novelDirs.push(entry.name);
+      }
+    }
 
     if (!silent) {
-      logger.info(`同步到 GitHub: ${novels.length} 本小说 -> ${remoteDirName}/ (分卷压缩)`);
+      logger.info(`同步到 GitHub: ${novelDirs.length} 本小说 -> ${remoteDirName}/ (分卷压缩)`);
     }
 
     // 创建临时目录
@@ -506,12 +537,12 @@ export const syncClassicNovels = async (options = {}) => {
     await createDir(remoteDir);
 
     // 遍历每本小说，分别压缩
-    for (const novel of novels) {
-      const novelDir = path.join(localDir, novel.dir);
-      const tarFile = path.join(remoteDir, `${novel.dir}.tar`);
+    for (const dirName of novelDirs) {
+      const novelDir = path.join(localDir, dirName);
+      const tarFile = path.join(remoteDir, `${dirName}.tar`);
 
       if (!silent) {
-        logger.debug(`压缩: ${novel.dir}`);
+        logger.debug(`压缩: ${dirName}`);
       }
       await compressDir(novelDir, tarFile);
     }
@@ -520,7 +551,7 @@ export const syncClassicNovels = async (options = {}) => {
     const timeString = new Date().toISOString();
     const commitResult = await commitAndPush(
       tempDir,
-      `chore: 同步 ${novels.length} 本小说 (分卷压缩) - ${timeString}`,
+      `chore: 同步 ${novelDirs.length} 本小说 (分卷压缩) - ${timeString}`,
       cloneResult.createdBranch
     );
 
@@ -532,7 +563,7 @@ export const syncClassicNovels = async (options = {}) => {
       if (commitResult.nothingToCommit) {
         logger.info(`GitHub 同步完成 (无变更)`);
       } else {
-        logger.info(`GitHub 同步完成: ${novels.length} 本小说 (已压缩)`);
+        logger.info(`GitHub 同步完成: ${novelDirs.length} 本小说 (已压缩)`);
       }
     }
 
@@ -760,14 +791,6 @@ export const downloadClassicNovels = async (options = {}) => {
 
     return { success: true };
   } catch (error) {
-    const msg = `GitHub 下载失败: ${error.message}`;
-    if (!silent) logger.error(msg);
-    return { success: false, error: msg };
-  } finally {
-    // 清理临时目录
-    await deleteDir(tempDir);
-  }
-};
     const msg = `GitHub 下载失败: ${error.message}`;
     if (!silent) logger.error(msg);
     return { success: false, error: msg };
