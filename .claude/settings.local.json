@@ -13,7 +13,12 @@
       "Bash(tail:*)",
       "Bash(git push)",
       "Bash(aliyunpan:*)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(git --version)",
+      "Bash(ssh:*)",
+      "Bash(exit:*)",
+      "Bash(taskkill:*)",
+      "Bash(git push:*)"
     ]
   }
 }
