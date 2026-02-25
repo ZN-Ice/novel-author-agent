@@ -220,10 +220,10 @@ program
     process.exit(0);
   });
 
-// sync 命令 - 同步到阿里云盘
+// sync 命令 - 同步到 GitHub
 program
   .command('sync')
-  .description('手动同步数据到阿里云盘')
+  .description('手动同步数据到 GitHub')
   .action(async () => {
     await commands.syncToCloud();
     process.exit(0);
@@ -232,16 +232,16 @@ program
 // sync-status 命令 - 查看同步状态
 program
   .command('sync-status')
-  .description('查看云盘同步状态')
+  .description('查看 GitHub 同步状态')
   .action(async () => {
     await commands.checkSyncStatus();
     process.exit(0);
   });
 
-// download-cloud 命令 - 从阿里云盘下载数据
+// download-cloud 命令 - 从 GitHub 下载数据
 program
   .command('download-cloud')
-  .description('从阿里云盘下载数据到本地')
+  .description('从 GitHub 下载数据到本地')
   .action(async () => {
     await commands.downloadFromCloud();
     process.exit(0);

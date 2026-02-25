@@ -58,6 +58,15 @@ export const config = {
     /^【第.+[章节回]】.*$/,                                            // 【第一章】标题
     /^[零一二三四五六七八九十百千万0-9]+[、.．].+$/,                   // 一、标题
   ],
+
+  // GitHub 备份配置
+  githubBackup: {
+    repo: process.env.GITHUB_BACKUP_REPO || '',
+    branch: process.env.GITHUB_BACKUP_BRANCH || 'main',
+    // 仓库中的子目录结构
+    classicNovelsDir: 'classic_novels',
+    workspacesDir: 'workspaces',
+  },
 };
 
 /**

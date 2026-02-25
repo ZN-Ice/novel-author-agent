@@ -216,13 +216,13 @@ export async function downloadBook(bookId) {
     console.log(chalk.white(`  总字数: ${novelData.totalWords}`));
     console.log(chalk.white(`  目录: ${novelDir.path}`));
 
-    // 同步到云盘
-    output.info('同步到阿里云盘...');
+    // 同步到 GitHub
+    output.info('同步到 GitHub...');
     const syncResult = await syncClassicNovels();
     if (syncResult.success) {
-      output.success('云盘同步完成');
+      output.success('GitHub 同步完成');
     } else {
-      output.warn(`云盘同步跳过: ${syncResult.error}`);
+      output.warn(`GitHub 同步跳过: ${syncResult.error}`);
     }
 
     return {
@@ -700,13 +700,13 @@ export async function smartOutlineCreate(description, options = {}) {
       console.log();
       console.log(chalk.white(result.content.substring(0, 800) + '...'));
 
-      // 同步到云盘
-      output.info('同步到阿里云盘...');
+      // 同步到 GitHub
+      output.info('同步到 GitHub...');
       const syncResult = await syncWorkspaces();
       if (syncResult.success) {
-        output.success('云盘同步完成');
+        output.success('GitHub 同步完成');
       } else {
-        output.warn(`云盘同步跳过: ${syncResult.error}`);
+        output.warn(`GitHub 同步跳过: ${syncResult.error}`);
       }
 
       return {
@@ -981,13 +981,13 @@ export async function cleanBook(bookId) {
   if (result) {
     output.success('清理完成');
 
-    // 同步到云盘
-    output.info('同步到阿里云盘...');
+    // 同步到 GitHub
+    output.info('同步到 GitHub...');
     const syncResult = await syncWorkspaces();
     if (syncResult.success) {
-      output.success('云盘同步完成');
+      output.success('GitHub 同步完成');
     } else {
-      output.warn(`云盘同步跳过: ${syncResult.error}`);
+      output.warn(`GitHub 同步跳过: ${syncResult.error}`);
     }
   } else {
     output.error('清理失败');
@@ -1300,13 +1300,13 @@ export async function deleteClassicNovel(seqOrDirName) {
   if (result) {
     output.success(`已删除: ${meta.title}`);
 
-    // 同步到云盘
-    output.info('同步到阿里云盘...');
+    // 同步到 GitHub
+    output.info('同步到 GitHub...');
     const syncResult = await syncClassicNovels();
     if (syncResult.success) {
-      output.success('云盘同步完成');
+      output.success('GitHub 同步完成');
     } else {
-      output.warn(`云盘同步跳过: ${syncResult.error}`);
+      output.warn(`GitHub 同步跳过: ${syncResult.error}`);
     }
   } else {
     output.error('删除失败');
@@ -1332,10 +1332,10 @@ export async function rebuildClassicNovelsIndex() {
 }
 
 /**
- * 手动同步到阿里云盘
+ * 手动同步到 GitHub
  */
 export async function syncToCloud() {
-  output.title('同步数据到阿里云盘');
+  output.title('同步数据到 GitHub');
 
   const result = await syncAllToCloud();
 
@@ -1360,18 +1360,27 @@ export async function syncToCloud() {
 }
 
 /**
- * 查看云盘同步状态
+ * 查看 GitHub 同步状态
  */
 export async function checkSyncStatus() {
-  output.title('云盘同步状态');
+  output.title('GitHub 同步状态');
 
-  const { isAliyunpanAvailable, checkSyncStatus: getStatus } = await import('../utils/cloud-sync.js');
+  const { checkSyncStatus: getStatus } = await import('../utils/cloud-sync.js');
   const status = await getStatus();
 
   console.log();
-  console.log(chalk.white(`  CLI工具: ${status.tool}`));
+  console.log(chalk.white(`  工具: ${status.tool}`));
+  console.log(chalk.white(`  Git 可用: ${status.gitAvailable ? chalk.green('是') : chalk.red('否')}`));
+  console.log(chalk.white(`  配置完整: ${status.configured ? chalk.green('是') : chalk.red('否')}`));
   console.log(chalk.white(`  状态: ${status.available ? chalk.green('可用') : chalk.red('不可用')}`));
-  console.log(chalk.white(`  云盘目录: ${status.cloudBaseDir}`));
+  console.log();
+  console.log(chalk.cyan('仓库信息:'));
+  console.log(chalk.white(`  仓库: ${status.repo}`));
+  console.log(chalk.white(`  分支: ${status.branch}`));
+  console.log();
+  console.log(chalk.cyan('远程目录:'));
+  console.log(chalk.white(`  经典小说: ${status.remoteDirs.classicNovels}`));
+  console.log(chalk.white(`  工作空间: ${status.remoteDirs.workspaces}`));
   console.log();
   console.log(chalk.cyan('本地目录:'));
   console.log(chalk.white(`  经典小说: ${status.localDirs.classicNovels}`));
@@ -1381,10 +1390,10 @@ export async function checkSyncStatus() {
 }
 
 /**
- * 从阿里云盘下载数据
+ * 从 GitHub 下载数据
  */
 export async function downloadFromCloud() {
-  output.title('从阿里云盘下载数据');
+  output.title('从 GitHub 下载数据');
 
   const result = await downloadAllFromCloud();
 

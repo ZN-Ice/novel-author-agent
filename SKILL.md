@@ -112,42 +112,65 @@ cd SKILL.md所在文件夹 && node src/index.js chapter write <book-id> 1
 cd SKILL.md所在文件夹 && node src/index.js chapter review <book-id> 1
 ```
 
-### 云盘同步
+### GitHub 同步
 
 ```bash
-# 查看云盘同步状态
+# 查看 GitHub 同步状态
 cd SKILL.md所在文件夹 && node src/index.js sync-status
 
-# 手动同步所有数据到阿里云盘
+# 手动同步所有数据到 GitHub
 cd SKILL.md所在文件夹 && node src/index.js sync
 
-# 从阿里云盘下载数据到本地（恢复数据）
+# 从 GitHub 下载数据到本地（恢复数据）
 cd SKILL.md所在文件夹 && node src/index.js download-cloud
 ```
 
-## 阿里云盘同步
+## GitHub 备份同步
 
-系统支持自动将数据同步到阿里云盘，使用 [aliyunpan](https://github.com/tickstep/aliyunpan) CLI 工具。
+系统支持自动将数据备份到 GitHub 仓库，使用 git 命令进行版本控制。
 
-### 安装和登录
+### 配置
+
+在 `.env` 文件中配置 GitHub 仓库：
 
 ```bash
-# Windows
-winget install tickstep.aliyunpan --silent
+# GitHub 备份配置
+GITHUB_BACKUP_REPO=git@github.com:YOUR_USERNAME/your-repo.git
+GITHUB_BACKUP_BRANCH=main
+```
 
-# 登录
-aliyunpan login
+### SSH Key 配置
+
+确保已配置 SSH Key 并添加到 GitHub：
+
+```bash
+# 生成 SSH Key（如果还没有）
+ssh-keygen -t ed25519 -C "your_email@example.com"
+
+# 查看公钥
+cat ~/.ssh/id_ed25519.pub
+
+# 将公钥添加到 GitHub：Settings -> SSH and GPG keys -> New SSH key
 ```
 
 ### 自动同步
 
-以下操作完成后会自动同步到 `/novel-author-agent/` 目录：
+以下操作完成后会自动同步到 GitHub 仓库：
 - 下载经典小说
 - 智能大纲创作
 - 删除工作空间
 - 删除经典小说
 
-> 如果工具未安装或未登录，同步会跳过但不会影响主流程。
+> 如果 git 不可用或配置不完整，同步会跳过但不会影响主流程。
+
+### 仓库目录结构
+
+GitHub 仓库中的目录结构：
+```
+your-repo/
+├── classic_novels/    # 经典小说备份
+└── workspaces/        # 工作空间备份
+```
 
 ## 典型工作流程
 
