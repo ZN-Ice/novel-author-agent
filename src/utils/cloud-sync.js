@@ -9,6 +9,7 @@ import path from 'path';
 import { tmpdir } from 'os';
 import getLogger from './logger.js';
 import config from '../../config/index.js';
+import { listClassicNovels, rebuildNovelIndex } from '../scraper/classic-novels.js';
 
 const execAsync = promisify(exec);
 const logger = getLogger();
@@ -107,6 +108,31 @@ const copyDir = async (srcPath, destPath) => {
     }
   } catch (error) {
     throw new Error(`拷贝目录失败: ${error.message}`);
+  }
+};
+
+/**
+ * 列出目录中的文件
+ * @param {string} dirPath - 目录路径
+ * @param {string} pattern - 文件模式 (如 *.tar)
+ * @returns {Promise<string[]>} 文件列表
+ */
+const listFiles = async (dirPath, pattern = '*') => {
+  try {
+    if (process.platform === 'win32') {
+      const { stdout } = await execAsync(`dir /b "${dirPath}\\${pattern}"`, {
+        shell: 'cmd.exe',
+        timeout: 10000,
+      });
+      return stdout.trim().split('\n').filter(Boolean);
+    } else {
+      const { stdout } = await execAsync(`ls -1 "${dirPath}/${pattern}"`, {
+        timeout: 10000,
+      });
+      return stdout.trim().split('\n').filter(Boolean);
+    }
+  } catch (error) {
+    return [];
   }
 };
 
@@ -426,7 +452,7 @@ export const syncToGitHub = async (localDir, remoteDirName, options = {}) => {
 };
 
 /**
- * 同步经典小说目录到 GitHub（使用 tar 压缩）
+ * 同步经典小说目录到 GitHub（每本小说分别压缩成 tar）
  * @param {Object} options - 选项
  * @returns {Promise<Object>} 同步结果
  */
@@ -454,8 +480,11 @@ export const syncClassicNovels = async (options = {}) => {
       return { success: false, error: msg };
     }
 
+    // 获取小说列表
+    const novels = await listClassicNovels();
+
     if (!silent) {
-      logger.info(`同步到 GitHub: ${path.basename(localDir)} -> ${remoteDirName}/ (压缩模式)`);
+      logger.info(`同步到 GitHub: ${novels.length} 本小说 -> ${remoteDirName}/ (分卷压缩)`);
     }
 
     // 创建临时目录
@@ -473,24 +502,25 @@ export const syncClassicNovels = async (options = {}) => {
     // 拉取最新代码
     await pullRepo(tempDir);
 
-    // 删除远程目录（如果存在）
-    await deleteDir(remoteDir);
-
     // 创建远程目录
     await createDir(remoteDir);
 
-    // 使用 tar 压缩
-    const tarFile = path.join(remoteDir, 'classic_novels.tar');
-    if (!silent) {
-      logger.debug(`压缩文件: ${localDir} -> ${tarFile}`);
+    // 遍历每本小说，分别压缩
+    for (const novel of novels) {
+      const novelDir = path.join(localDir, novel.dir);
+      const tarFile = path.join(remoteDir, `${novel.dir}.tar`);
+
+      if (!silent) {
+        logger.debug(`压缩: ${novel.dir}`);
+      }
+      await compressDir(novelDir, tarFile);
     }
-    await compressDir(localDir, tarFile);
 
     // 提交并推送
     const timeString = new Date().toISOString();
     const commitResult = await commitAndPush(
       tempDir,
-      `chore: 同步 ${remoteDirName} (压缩) - ${timeString}`,
+      `chore: 同步 ${novels.length} 本小说 (分卷压缩) - ${timeString}`,
       cloneResult.createdBranch
     );
 
@@ -502,7 +532,7 @@ export const syncClassicNovels = async (options = {}) => {
       if (commitResult.nothingToCommit) {
         logger.info(`GitHub 同步完成 (无变更)`);
       } else {
-        logger.info(`GitHub 同步完成: ${path.basename(localDir)} (已压缩)`);
+        logger.info(`GitHub 同步完成: ${novels.length} 本小说 (已压缩)`);
       }
     }
 
@@ -663,7 +693,6 @@ export const downloadClassicNovels = async (options = {}) => {
   const timestamp = Date.now();
   const tempDir = path.join(TEMP_BASE, `download-${timestamp}`);
   const remoteDir = path.join(tempDir, remoteDirName);
-  const tarFile = path.join(remoteDir, 'classic_novels.tar');
 
   try {
     // 检查 git 是否可用
@@ -682,7 +711,7 @@ export const downloadClassicNovels = async (options = {}) => {
     }
 
     if (!silent) {
-      logger.info(`从 GitHub 下载: ${remoteDirName}/ -> ${localDir} (解压模式)`);
+      logger.info(`从 GitHub 下载: ${remoteDirName}/ -> ${localDir} (分卷解压)`);
     }
 
     // 创建临时目录
@@ -694,14 +723,11 @@ export const downloadClassicNovels = async (options = {}) => {
       throw new Error(`克隆仓库失败: ${cloneResult.error}`);
     }
 
-    // 检查 tar 文件是否存在
-    const checkResult = await execAsync(`if exist "${tarFile}" (echo exists) else (echo not_exists)`, {
-      shell: 'cmd.exe',
-      timeout: 5000,
-    });
+    // 列出远程目录中的 tar 文件
+    const tarFiles = await listFiles(remoteDir, '*.tar');
 
-    if (!checkResult.stdout.includes('exists')) {
-      const msg = `备份文件不存在: ${remoteDirName}/classic_novels.tar`;
+    if (tarFiles.length === 0) {
+      const msg = `备份文件不存在: ${remoteDirName} 中没有 .tar 文件`;
       if (!silent) logger.warn(msg);
       return { success: false, error: msg };
     }
@@ -710,24 +736,38 @@ export const downloadClassicNovels = async (options = {}) => {
     const localParentDir = path.dirname(localDir);
     await createDir(localParentDir);
 
-    // 删除本地目录（如果存在）
-    await deleteDir(localDir);
-
     // 创建本地目录
     await createDir(localDir);
 
-    // 解压 tar 文件到本地目录
-    if (!silent) {
-      logger.debug(`解压文件: ${tarFile} -> ${localDir}`);
+    // 解压每个 tar 文件
+    for (const tarFile of tarFiles) {
+      const tarPath = path.join(remoteDir, tarFile);
+      if (!silent) {
+        logger.debug(`解压: ${tarFile}`);
+      }
+      await extractTar(tarPath, localDir);
     }
-    await extractTar(tarFile, localDir);
+
+    // 重建索引
+    if (!silent) {
+      logger.debug(`重建经典小说索引...`);
+    }
+    await rebuildNovelIndex();
 
     if (!silent) {
-      logger.info(`GitHub 下载完成: ${remoteDirName} (已解压)`);
+      logger.info(`GitHub 下载完成: ${tarFiles.length} 本小说 (已解压)`);
     }
 
     return { success: true };
   } catch (error) {
+    const msg = `GitHub 下载失败: ${error.message}`;
+    if (!silent) logger.error(msg);
+    return { success: false, error: msg };
+  } finally {
+    // 清理临时目录
+    await deleteDir(tempDir);
+  }
+};
     const msg = `GitHub 下载失败: ${error.message}`;
     if (!silent) logger.error(msg);
     return { success: false, error: msg };
