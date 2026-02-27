@@ -1,0 +1,17 @@
+{
+  "bookId": "5_20260222_222223_无限世界",
+  "seq": 5,
+  "history": [
+    {
+      "timestamp": "2026-02-22T14:22:23.658Z",
+      "phase": "outlining",
+      "action": "智能大纲创作",
+      "status": "completed",
+      "details": {
+        "description": "我想写一本无限流的小说",
+        "references": []
+      },
+      "error": null
+    }
+  ]
+}
