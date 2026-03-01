@@ -105,7 +105,11 @@ const copyDir = async (srcPath, destPath) => {
       });
     } else {
       // Unix 使用 cp -r
-      await execAsync(`cp -r "${srcPath}" "${destPath}"`, {
+      // 确保目标路径以 / 结尾，这样 cp 会复制内容而不是目录本身
+      const destPathSlash = destPath.endsWith('/') ? destPath : destPath + '/';
+      // 使用 cp -r 源目录/* 目标/ 来复制内容
+      // 或者使用 cp -r 源目录/. 目标/ 来复制包括隐藏文件在内的所有内容
+      await execAsync(`cp -r "${srcPath}/." "${destPathSlash}"`, {
         timeout: 60000,
       });
     }
