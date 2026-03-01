@@ -128,6 +128,7 @@ outlineCmd
   .option('--theme <theme>', '主题设定')
   .option('--protagonist <protagonist>', '主角设定')
   .option('--setting <setting>', '世界观设定')
+  .option('--compile <instruction>', '自然语言编译指令')
   .action(async (bookId, options) => {
     await commands.createOutline(bookId, options);
     process.exit(0);
@@ -149,16 +150,18 @@ outlineCmd
 outlineCmd
   .command('review <bookId>')
   .description('评价大纲')
-  .action(async (bookId) => {
-    await commands.reviewOutline(bookId);
+  .option('--compile <instruction>', '自然语言编译指令')
+  .action(async (bookId, options) => {
+    await commands.reviewOutline(bookId, options);
     process.exit(0);
   });
 
 outlineCmd
   .command('optimize <bookId>')
   .description('优化大纲')
-  .action(async (bookId) => {
-    await commands.optimizeOutline(bookId);
+  .option('--compile <instruction>', '自然语言编译指令')
+  .action(async (bookId, options) => {
+    await commands.optimizeOutline(bookId, options);
     process.exit(0);
   });
 
@@ -171,6 +174,7 @@ chapterCmd
   .command('write <bookId> <chapterNum>')
   .description('创作章节')
   .option('--title <title>', '章节标题')
+  .option('--compile <instruction>', '自然语言编译指令')
   .action(async (bookId, chapterNum, options) => {
     await commands.writeChapter(bookId, parseInt(chapterNum), options);
     process.exit(0);
@@ -179,8 +183,9 @@ chapterCmd
 chapterCmd
   .command('review <bookId> <chapterNum>')
   .description('评价章节')
-  .action(async (bookId, chapterNum) => {
-    await commands.reviewChapter(bookId, parseInt(chapterNum));
+  .option('--compile <instruction>', '自然语言编译指令')
+  .action(async (bookId, chapterNum, options) => {
+    await commands.reviewChapter(bookId, parseInt(chapterNum), options);
     process.exit(0);
   });
 

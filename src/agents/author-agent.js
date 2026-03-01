@@ -102,6 +102,46 @@ const SYSTEM_PROMPTS = {
 6. **关键节点**：重要的转折点和冲突点
 7. **伏笔设计**：需要埋设的伏笔
 8. **主题思想**：故事想要表达的核心主题`,
+
+  OUTLINE_COMPILATION: `你是一位经验丰富的小说编辑和作家。你的任务是根据用户的自然语言指令对大纲进行修改和调整。
+
+你需要：
+1. 仔细理解用户的指令要求
+2. 分析当前大纲的结构和内容
+3. 根据指令精准地修改大纲相关部分
+4. 保持大纲整体的一致性和逻辑性
+
+支持的修改类型：
+- 章节标题修改：调整特定章节的标题
+- 情节顺序调整：重新排列章节顺序
+- 人物关系调整：修改人物设定和关系
+- 世界观修改：更新背景设定
+- 主线剧情调整：修改核心故事线
+- 风格调整：改变叙事风格
+- 节奏调整：加快或放缓节奏
+- 叙事视角调整：改变人称和视角
+
+请直接输出修改后的完整大纲，不要包含额外的解释说明。`,
+
+  CHAPTER_COMPILATION: `你是一位专业的小说作家和编辑。你的任务是根据用户的自然语言指令对章节内容进行修改和调整。
+
+你需要：
+1. 仔细理解用户的指令要求
+2. 分析当前章节的内容和风格
+3. 根据指令精准地修改相关部分
+4. 保持章节与大纲的一致性
+5. 保持人物性格和语言风格的一致性
+
+支持的修改类型：
+- 内容修改：增删改特定情节或对话
+- 结构调整：重新组织段落和场景
+- 节奏调整：加快或放缓叙事节奏
+- 悬念设置：增加或调整悬念
+- 对话风格调整：使对话更加口语化或正式
+- 描写手法调整：增加环境/心理/动作描写
+- 人物表现调整：优化人物的行为和对话
+
+请直接输出修改后的完整章节内容，不要包含额外的解释说明。`,
 };
 
 /**
@@ -378,6 +418,147 @@ ${chapterContent}
 
     if (result.success) {
       logger.info(`[${this.name}] 章节优化完成`);
+    }
+
+    return result;
+  }
+
+  /**
+   * 根据自然语言指令修改大纲
+   * @param {Object} params - 参数
+   * @returns {Promise<Object>}
+   */
+  async compileOutline(params) {
+    const {
+      outline,
+      instruction,
+      previousContent = '',
+    } = params;
+
+    logger.info(`[${this.name}] 开始编译大纲: ${instruction}`);
+
+    const userMessage = `请根据以下指令修改大纲：
+
+**当前大纲**:
+${truncate(outline, 8000)}
+
+**修改指令**: ${instruction}
+
+${previousContent ? `**前文参考**:\n${truncate(previousContent, 1000)}` : ''}
+
+请输出修改后的完整大纲。`;
+
+    const result = await this.call(userMessage, {
+      systemPrompt: SYSTEM_PROMPTS.OUTLINE_COMPILATION,
+    });
+
+    if (result.success) {
+      logger.info(`[${this.name}] 大纲编译完成`);
+    }
+
+    return result;
+  }
+
+  /**
+   * 根据自然语言指令修改章节
+   * @param {Object} params - 参数
+   * @returns {Promise<Object>}
+   */
+  async compileChapter(params) {
+    const {
+      content,
+      instruction,
+      outline = '',
+      previousContent = '',
+    } = params;
+
+    logger.info(`[${this.name}] 开始编译章节: ${instruction}`);
+
+    const userMessage = `请根据以下指令修改章节内容：
+
+**当前章节内容**:
+${truncate(content, 8000)}
+
+**修改指令**: ${instruction}
+
+${outline ? `**大纲参考**:\n${truncate(outline, 2000)}` : ''}
+
+${previousContent ? `**前文参考**:\n${truncate(previousContent, 1000)}` : ''}
+
+请输出修改后的完整章节内容。`;
+
+    const result = await this.call(userMessage, {
+      systemPrompt: SYSTEM_PROMPTS.CHAPTER_COMPILATION,
+    });
+
+    if (result.success) {
+      logger.info(`[${this.name}] 章节编译完成`);
+    }
+
+    return result;
+  }
+
+  /**
+   * 根据指令生成大纲评价
+   * @param {Object} params - 参数
+   * @returns {Promise<Object>}
+   */
+  async compileOutlineReview(params) {
+    const {
+      outline,
+      instruction,
+    } = params;
+
+    logger.info(`[${this.name}] 开始编译大纲评价: ${instruction}`);
+
+    const userMessage = `请根据以下指令对大纲进行评价：
+
+**大纲内容**:
+${truncate(outline, 8000)}
+
+**评价要求**: ${instruction}
+
+请提供详细的评价和建议。`;
+
+    const result = await this.call(userMessage, {
+      systemPrompt: SYSTEM_PROMPTS.STYLE_ANALYSIS,
+    });
+
+    if (result.success) {
+      logger.info(`[${this.name}] 大纲评价编译完成`);
+    }
+
+    return result;
+  }
+
+  /**
+   * 根据指令生成章节评价
+   * @param {Object} params - 参数
+   * @returns {Promise<Object>}
+   */
+  async compileChapterReview(params) {
+    const {
+      content,
+      instruction,
+    } = params;
+
+    logger.info(`[${this.name}] 开始编译章节评价: ${instruction}`);
+
+    const userMessage = `请根据以下指令对章节进行评价：
+
+**章节内容**:
+${truncate(content, 8000)}
+
+**评价要求**: ${instruction}
+
+请提供详细的评价和建议。`;
+
+    const result = await this.call(userMessage, {
+      systemPrompt: SYSTEM_PROMPTS.STYLE_ANALYSIS,
+    });
+
+    if (result.success) {
+      logger.info(`[${this.name}] 章节评价编译完成`);
     }
 
     return result;

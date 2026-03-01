@@ -9,6 +9,7 @@
 - 智能章节拆分和解析
 - 分析小说大纲结构和写作风格
 - **智能大纲创作** - 输入描述，自动匹配参考小说并创作大纲
+- **自然语言编译模式** - 通过自然语言指令灵活修改大纲和章节
 - 参考学习经典作品
 - 创作和优化小说大纲
 - 创作和优化具体章节
@@ -142,6 +143,25 @@ node src/index.js chapter write 1 1
 node src/index.js chapter review 1 1
 ```
 
+### 自然语言编译模式（推荐）
+
+使用 `--compile` 选项，可以通过自然语言指令灵活修改大纲和章节：
+
+```bash
+# 大纲编译 - 自动创建新版本
+node src/index.js outline create 1 --compile "修改第3章的标题为'决战前夕'"
+node src/index.js outline review 1 --compile "重点评价情节的连贯性和人物动机"
+node src/index.js outline optimize 1 --compile "加快前期的节奏，在第五章加入新冲突"
+
+# 章节编译 - 自动创建新版本
+node src/index.js chapter write 1 1 --compile "让对话更加口语化，增加人物互动"
+node src/index.js chapter review 1 1 --compile "评价人物表现是否自然，悬念设置是否到位"
+
+# 支持的修改类型：
+# - 大纲：章节标题、情节顺序、人物关系、世界观、主线剧情、风格、节奏、叙事视角
+# - 章节：内容修改、结构调整、节奏、悬念、对话风格、描写手法、人物表现
+```
+
 ## 目录结构
 
 ```
@@ -179,11 +199,11 @@ novel-author-agent/
 │       ├── source/         # 原始下载
 │       ├── analysis/       # 分析结果
 │       ├── outline/        # 大纲
-│       │   ├── draft/      # 草稿
-│       │   └── final/      # 最终版
+│       │   ├── draft/      # 草稿（版本化：outline-v1.txt, outline-v2.txt...）
+│       │   └── final/      # 最终版（覆盖模式：outline.txt）
 │       └── chapters/       # 章节
-│           ├── draft/      # 草稿
-│           └── final/      # 最终版
+│           ├── draft/      # 草稿（版本化：chapter-1-v1.txt, chapter-1-v2.txt...）
+│           └── final/      # 最终版（覆盖模式）
 └── logs/                   # 日志目录
 ```
 
@@ -214,6 +234,10 @@ novel-author-agent/
 | `sync` | 手动同步数据到 GitHub |
 | `sync-status` | 查看 GitHub 同步状态 |
 | `download-cloud` | 从 GitHub 下载数据到本地 |
+
+**编译模式选项**（以上命令支持 `--compile <指令>` 自然语言修改）：
+- `outline create/review/optimize <bookId> --compile "指令"` - 按自然语言修改大纲
+- `chapter write/review <bookId> <num> --compile "指令"` - 按自然语言修改章节
 
 ## GitHub 备份同步
 

@@ -36,9 +36,11 @@ export const ACTIONS = {
   CREATE_OUTLINE: '创作大纲',
   REVIEW_OUTLINE: '评价大纲',
   OPTIMIZE_OUTLINE: '优化大纲',
+  COMPILE_OUTLINE: '编译大纲',
   WRITE_CHAPTER: '创作章节',
   REVIEW_CHAPTER: '评价章节',
   OPTIMIZE_CHAPTER: '优化章节',
+  COMPILE_CHAPTER: '编译章节',
 };
 
 /**

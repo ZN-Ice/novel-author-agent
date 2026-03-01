@@ -102,6 +102,25 @@ cd SKILL.md所在文件夹 && node src/index.js outline review <book-id>
 cd SKILL.md所在文件夹 && node src/index.js outline optimize <book-id>
 ```
 
+### 自然语言编译模式（推荐）
+
+使用 `--compile` 选项，通过自然语言指令灵活修改大纲和章节：
+
+```bash
+# 大纲编译 - 自动创建新版本
+cd SKILL.md所在文件夹 && node src/index.js outline create 1 --compile "修改第3章的标题为'决战前夕'"
+cd SKILL.md所在文件夹 && node src/index.js outline review 1 --compile "重点评价情节的连贯性"
+cd SKILL.md所在文件夹 && node src/index.js outline optimize 1 --compile "加快前期节奏，增加更多冲突"
+
+# 章节编译 - 自动创建新版本
+cd SKILL.md所在文件夹 && node src/index.js chapter write 1 1 --compile "让对话更加口语化"
+cd SKILL.md所在文件夹 && node src/index.js chapter review 1 1 --compile "评价人物表现是否自然"
+
+# 支持的修改类型：
+# - 大纲：章节标题、情节顺序、人物关系、世界观、主线剧情、风格、节奏、叙事视角
+# - 章节：内容修改、结构调整、节奏、悬念、对话风格、描写手法、人物表现
+```
+
 ### 章节创作流程
 
 ```bash
@@ -174,15 +193,15 @@ your-repo/
 
 ## 典型工作流程
 
-### 推荐流程：智能大纲创作
+### 推荐流程：智能大纲创作 + 自然语言编译
 
 ```
 1. cd SKILL.md所在文件夹 && node src/index.js search-download 诡秘之主 --auto  # 下载参考小说
 2. cd SKILL.md所在文件夹 && node src/index.js outline smart "我想写一本克苏鲁风格的玄幻小说" --title 我的小说
-3. cd SKILL.md所在文件夹 && node src/index.js outline review 1                  # 评价大纲
-4. cd SKILL.md所在文件夹 && node src/index.js outline optimize 1                # 优化大纲
-5. cd SKILL.md所在文件夹 && node src/index.js chapter write 1 1                 # 创作第一章
-6. cd SKILL.md所在文件夹 && node src/index.js chapter review 1 1                # 评价第一章
+3. cd SKILL.md所在文件夹 && node src/index.js outline review 1 --compile "重点评价情节连贯性"  # 评价大纲
+4. cd SKILL.md所在文件夹 && node src/index.js outline optimize 1 --compile "加快前期节奏"     # 优化大纲
+5. cd SKILL.md所在文件夹 && node src/index.js chapter write 1 1 --compile "增加更多对话"      # 创作第一章
+6. cd SKILL.md所在文件夹 && node src/index.js chapter review 1 1 --compile "评价悬念设置"    # 评价第一章
 ```
 
 ### 搜索和下载小说

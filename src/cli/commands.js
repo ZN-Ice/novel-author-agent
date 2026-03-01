@@ -60,6 +60,12 @@ import {
   downloadWorkspaces,
   downloadAllFromCloud,
 } from '../utils/cloud-sync.js';
+import {
+  saveVersionedFile,
+  saveFinalFile,
+  getLatestVersion,
+  validateInstruction,
+} from '../utils/version-manager.js';
 
 const logger = getLogger();
 
@@ -518,6 +524,54 @@ export async function createOutline(bookId, options = {}) {
     return null;
   }
 
+  // 编译模式：根据自然语言指令修改现有大纲
+  if (options.compile) {
+    if (!validateInstruction(options.compile)) {
+      output.error('编译指令无效（长度应在2-500字符之间）');
+      return null;
+    }
+
+    output.info(`编译模式: ${options.compile}`);
+
+    // 读取最新版本的大纲
+    const draftDir = getFilePath(bookId, 'outline/draft');
+    const latestOutline = await getLatestVersion(draftDir, 'outline');
+
+    if (!latestOutline) {
+      output.error('未找到现有大纲，请先创作大纲');
+      return null;
+    }
+
+    output.info('正在编译大纲...');
+
+    const authorAgent = getAuthorAgent();
+    const result = await authorAgent.compileOutline({
+      outline: latestOutline.content,
+      instruction: options.compile,
+    });
+
+    if (result.success) {
+      const { filePath, version } = await saveVersionedFile(draftDir, 'outline', result.content);
+
+      await addProgress(bookId, {
+        phase: PHASES.OUTLINING,
+        action: ACTIONS.COMPILE_OUTLINE || '编译大纲',
+        status: 'completed',
+        details: { instruction: options.compile, version },
+      });
+
+      output.success(`大纲编译完成 (v${version})`);
+      console.log();
+      console.log(chalk.white(result.content.substring(0, 500) + '...'));
+
+      return result;
+    } else {
+      output.error(`编译失败: ${result.error}`);
+      return result;
+    }
+  }
+
+  // 正常创作模式
   output.info('正在创作大纲...');
 
   const authorAgent = getAuthorAgent();
@@ -728,7 +782,7 @@ export async function smartOutlineCreate(description, options = {}) {
 /**
  * 评价大纲
  */
-export async function reviewOutline(bookId) {
+export async function reviewOutline(bookId, options = {}) {
   output.title('评价大纲');
 
   const validation = validateConfig();
@@ -738,7 +792,56 @@ export async function reviewOutline(bookId) {
     return null;
   }
 
-  const outlinePath = getFilePath(bookId, 'outline/draft', 'outline-v1.txt');
+  const draftDir = getFilePath(bookId, 'outline/draft');
+
+  // 编译模式：根据自然语言指令生成评价
+  if (options.compile) {
+    if (!validateInstruction(options.compile)) {
+      output.error('编译指令无效（长度应在2-500字符之间）');
+      return null;
+    }
+
+    output.info(`编译模式: ${options.compile}`);
+
+    const latestOutline = await getLatestVersion(draftDir, 'outline');
+
+    if (!latestOutline) {
+      output.error('未找到现有大纲，请先创作大纲');
+      return null;
+    }
+
+    output.info('正在生成评价...');
+
+    const authorAgent = getAuthorAgent();
+    const result = await authorAgent.compileOutlineReview({
+      outline: latestOutline.content,
+      instruction: options.compile,
+    });
+
+    if (result.success) {
+      const reviewPath = path.join(draftDir, `review-${Date.now()}.txt`);
+      await writeText(reviewPath, result.content);
+
+      await addProgress(bookId, {
+        phase: PHASES.OUTLINING,
+        action: ACTIONS.REVIEW_OUTLINE,
+        status: 'completed',
+        details: { instruction: options.compile },
+      });
+
+      output.success('评价生成完成');
+      console.log();
+      console.log(chalk.white(result.content.substring(0, 800)));
+
+      return result;
+    } else {
+      output.error(`评价失败: ${result.error}`);
+      return result;
+    }
+  }
+
+  // 正常评价模式
+  const outlinePath = path.join(draftDir, 'outline-v1.txt');
   const outline = await readText(outlinePath);
 
   if (!outline) {
@@ -752,7 +855,7 @@ export async function reviewOutline(bookId) {
   const result = await editorAgent.reviewOutline(outline);
 
   if (result.success) {
-    const reviewPath = getFilePath(bookId, 'outline/draft', 'review.json');
+    const reviewPath = path.join(draftDir, 'review.json');
     await writeJson(reviewPath, result.review);
 
     await addProgress(bookId, {
@@ -791,7 +894,7 @@ export async function reviewOutline(bookId) {
 /**
  * 优化大纲
  */
-export async function optimizeOutline(bookId) {
+export async function optimizeOutline(bookId, options = {}) {
   output.title('优化大纲');
 
   const validation = validateConfig();
@@ -801,6 +904,56 @@ export async function optimizeOutline(bookId) {
     return null;
   }
 
+  // 编译模式：根据自然语言指令优化大纲
+  if (options.compile) {
+    if (!validateInstruction(options.compile)) {
+      output.error('编译指令无效（长度应在2-500字符之间）');
+      return null;
+    }
+
+    output.info(`编译模式: ${options.compile}`);
+
+    const draftDir = getFilePath(bookId, 'outline/draft');
+    const latestOutline = await getLatestVersion(draftDir, 'outline');
+
+    if (!latestOutline) {
+      output.error('未找到现有大纲，请先创作大纲');
+      return null;
+    }
+
+    output.info('正在优化大纲...');
+
+    const authorAgent = getAuthorAgent();
+    const result = await authorAgent.compileOutline({
+      outline: latestOutline.content,
+      instruction: options.compile,
+    });
+
+    if (result.success) {
+      const finalDir = getFilePath(bookId, 'outline/final');
+      await saveFinalFile(finalDir, 'outline.txt', result.content);
+
+      await addProgress(bookId, {
+        phase: PHASES.OUTLINED,
+        action: ACTIONS.OPTIMIZE_OUTLINE,
+        status: 'completed',
+        details: { instruction: options.compile },
+      });
+
+      await updateMeta(bookId, { status: PHASES.OUTLINED });
+
+      output.success('大纲优化完成');
+      console.log();
+      console.log(chalk.white(result.content.substring(0, 500) + '...'));
+
+      return result;
+    } else {
+      output.error(`优化失败: ${result.error}`);
+      return result;
+    }
+  }
+
+  // 正常优化模式
   const outlinePath = getFilePath(bookId, 'outline/draft', 'outline-v1.txt');
   const reviewPath = getFilePath(bookId, 'outline/draft', 'review.json');
 
@@ -858,6 +1011,71 @@ export async function writeChapter(bookId, chapterNum, options = {}) {
     return null;
   }
 
+  // 编译模式：根据自然语言指令修改现有章节
+  if (options.compile) {
+    if (!validateInstruction(options.compile)) {
+      output.error('编译指令无效（长度应在2-500字符之间）');
+      return null;
+    }
+
+    output.info(`编译模式: ${options.compile}`);
+
+    const chapterPath = getFilePath(bookId, 'chapters/draft', `chapter-${chapterNum}.txt`);
+    const content = await readText(chapterPath);
+
+    if (!content) {
+      output.error('章节不存在，请先创作章节');
+      return null;
+    }
+
+    // 读取大纲
+    const outlinePath = getFilePath(bookId, 'outline/final');
+    let outline = '';
+    try {
+      const files = await import('fs/promises');
+      const dir = await files.readdir(outlinePath);
+      if (dir.length > 0) {
+        const latestFile = dir.sort().pop();
+        outline = await readText(path.join(outlinePath, latestFile));
+      }
+    } catch {
+      const draftDir = getFilePath(bookId, 'outline/draft');
+      const latestOutline = await getLatestVersion(draftDir, 'outline');
+      outline = latestOutline?.content || '';
+    }
+
+    output.info('正在编译章节...');
+
+    const authorAgent = getAuthorAgent();
+    const result = await authorAgent.compileChapter({
+      content,
+      instruction: options.compile,
+      outline,
+    });
+
+    if (result.success) {
+      const draftDir = getFilePath(bookId, 'chapters/draft');
+      const { filePath, version } = await saveVersionedFile(draftDir, `chapter-${chapterNum}`, result.content);
+
+      await addProgress(bookId, {
+        phase: PHASES.WRITING,
+        action: ACTIONS.COMPILE_CHAPTER || '编译章节',
+        status: 'completed',
+        details: { chapter: chapterNum, instruction: options.compile, version },
+      });
+
+      output.success(`章节编译完成 (v${version})`);
+      console.log();
+      console.log(chalk.white(result.content.substring(0, 500) + '...'));
+
+      return result;
+    } else {
+      output.error(`编译失败: ${result.error}`);
+      return result;
+    }
+  }
+
+  // 正常创作模式
   // 读取大纲
   const outlinePath = getFilePath(bookId, 'outline/final');
   let outline = '';
@@ -910,7 +1128,7 @@ export async function writeChapter(bookId, chapterNum, options = {}) {
 /**
  * 评价章节
  */
-export async function reviewChapter(bookId, chapterNum) {
+export async function reviewChapter(bookId, chapterNum, options = {}) {
   output.title(`评价第 ${chapterNum} 章`);
 
   const validation = validateConfig();
@@ -920,7 +1138,56 @@ export async function reviewChapter(bookId, chapterNum) {
     return null;
   }
 
-  const chapterPath = getFilePath(bookId, 'chapters/draft', `chapter-${chapterNum}.txt`);
+  const draftDir = getFilePath(bookId, 'chapters/draft');
+
+  // 编译模式：根据自然语言指令生成评价
+  if (options.compile) {
+    if (!validateInstruction(options.compile)) {
+      output.error('编译指令无效（长度应在2-500字符之间）');
+      return null;
+    }
+
+    output.info(`编译模式: ${options.compile}`);
+
+    const latestChapter = await getLatestVersion(draftDir, `chapter-${chapterNum}`);
+
+    if (!latestChapter) {
+      output.error('未找到现有章节，请先创作章节');
+      return null;
+    }
+
+    output.info('正在生成评价...');
+
+    const authorAgent = getAuthorAgent();
+    const result = await authorAgent.compileChapterReview({
+      content: latestChapter.content,
+      instruction: options.compile,
+    });
+
+    if (result.success) {
+      const reviewPath = path.join(draftDir, `chapter-${chapterNum}-review-${Date.now()}.txt`);
+      await writeText(reviewPath, result.content);
+
+      await addProgress(bookId, {
+        phase: PHASES.WRITING,
+        action: ACTIONS.REVIEW_CHAPTER,
+        status: 'completed',
+        details: { chapter: chapterNum, instruction: options.compile },
+      });
+
+      output.success('评价生成完成');
+      console.log();
+      console.log(chalk.white(result.content.substring(0, 800)));
+
+      return result;
+    } else {
+      output.error(`评价失败: ${result.error}`);
+      return result;
+    }
+  }
+
+  // 正常评价模式
+  const chapterPath = path.join(draftDir, `chapter-${chapterNum}.txt`);
   const content = await readText(chapterPath);
 
   if (!content) {
@@ -934,7 +1201,7 @@ export async function reviewChapter(bookId, chapterNum) {
   const result = await editorAgent.reviewChapter(content, { chapterNumber: chapterNum });
 
   if (result.success) {
-    const reviewPath = getFilePath(bookId, 'chapters/draft', `chapter-${chapterNum}-review.json`);
+    const reviewPath = path.join(draftDir, `chapter-${chapterNum}-review.json`);
     await writeJson(reviewPath, result.review);
 
     await addProgress(bookId, {
