@@ -21,6 +21,10 @@ classic_novels/
 *.swp
 *.swo
 
+# Claude Code local settings
+.claude/settings.local.json
+.claude/settings.backup.json
+
 # OS
 .DS_Store
 Thumbs.db
