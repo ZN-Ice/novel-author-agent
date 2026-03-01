@@ -718,12 +718,24 @@ export const downloadFromGitHub = async (remoteDirName, localDir, options = {}) 
     }
 
     // 检查远程目录是否存在
-    const checkResult = await execAsync(`if exist "${remoteDir}" (echo exists) else (echo not_exists)`, {
-      shell: 'cmd.exe',
-      timeout: 5000,
-    });
+    let remoteExists = false;
+    if (process.platform === 'win32') {
+      const checkResult = await execAsync(`if exist "${remoteDir}" (echo exists) else (echo not_exists)`, {
+        shell: 'cmd.exe',
+        timeout: 5000,
+      });
+      remoteExists = checkResult.stdout.includes('exists');
+    } else {
+      // Linux/Mac 使用 test 命令
+      try {
+        await execAsync(`test -d "${remoteDir}"`, { timeout: 5000 });
+        remoteExists = true;
+      } catch {
+        remoteExists = false;
+      }
+    }
 
-    if (!checkResult.stdout.includes('exists')) {
+    if (!remoteExists) {
       const msg = `远程目录不存在: ${remoteDirName}`;
       if (!silent) logger.warn(msg);
       return { success: false, error: msg };
